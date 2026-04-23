@@ -48,6 +48,9 @@ async function buildAll() {
     outfile: "dist/index.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
+      // Polyfill import.meta.url for packages (e.g. drizzle-orm) that use it
+      // internally — import.meta is undefined in a CJS bundle without this.
+      "import.meta.url": "require('url').pathToFileURL(__filename).href",
     },
     minify: true,
     external: externals,
