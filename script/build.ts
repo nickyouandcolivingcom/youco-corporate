@@ -15,6 +15,12 @@ const allowlist = [
   "zod",
 ];
 
+// Packages that must never be bundled regardless of the allowlist scan —
+// they use __dirname / native bindings internally and break when inlined.
+const alwaysExternal = [
+  "connect-pg-simple",
+];
+
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
 
@@ -27,7 +33,12 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  const externals = [
+    ...new Set([
+      ...allDeps.filter((dep) => !allowlist.includes(dep)),
+      ...alwaysExternal,
+    ]),
+  ];
 
   await esbuild({
     entryPoints: ["server/index.ts"],
