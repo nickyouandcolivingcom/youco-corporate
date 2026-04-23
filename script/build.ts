@@ -46,11 +46,15 @@ async function buildAll() {
     bundle: true,
     format: "cjs",
     outfile: "dist/index.cjs",
+    // banner injects a CJS-safe variable at the top of the bundle;
+    // define rewrites every import.meta.url reference to that variable.
+    // esbuild define values must be entity names or literals — not expressions.
+    banner: {
+      js: "var __importMetaUrl = require('url').pathToFileURL(__filename).href;",
+    },
     define: {
       "process.env.NODE_ENV": '"production"',
-      // Polyfill import.meta.url for packages (e.g. drizzle-orm) that use it
-      // internally — import.meta is undefined in a CJS bundle without this.
-      "import.meta.url": "require('url').pathToFileURL(__filename).href",
+      "import.meta.url": "__importMetaUrl",
     },
     minify: true,
     external: externals,
