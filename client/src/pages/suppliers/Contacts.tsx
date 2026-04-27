@@ -13,6 +13,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
+import Papa from "papaparse";
 import type { Supplier } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/hooks/useAuth";
@@ -160,11 +161,19 @@ function nullify(form: SupplierForm) {
   );
 }
 
-function parseCsv(text: string): SupplierForm[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
+function normaliseHeader(h: string): string {
+  return h.trim()
+    .replace(/([a-z])([A-Z])/g, "$1_$2")  // accountNumber -> account_Number
+    .toLowerCase()
+    .replace(/\s+/g, "_");                  // "Account Number" -> account_number
+}
 
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+function parseCsv(text: string): SupplierForm[] {
+  const result = Papa.parse<string[]>(text, { skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map(normaliseHeader);
 
   const idx = (keys: string[]) => {
     for (const k of keys) {
@@ -177,30 +186,31 @@ function parseCsv(text: string): SupplierForm[] {
   const col = {
     name: idx(["name", "supplier", "supplier_name"]),
     property: idx(["property", "property_code"]),
-    accountNumber: idx(["account_number", "account_no", "account"]),
-    addressPostcode: idx(["address_postcode", "postcode", "address_post_code"]),
-    contactPhone: idx(["contact_phone", "phone", "telephone"]),
+    accountNumber: idx(["account_number", "account_no", "account", "accountnumber"]),
+    addressPostcode: idx(["address_postcode", "postcode", "address_post_code", "addresspostcode"]),
+    contactPhone: idx(["contact_phone", "phone", "telephone", "contactphone"]),
     email: idx(["email", "email_address"]),
-    youcoContact: idx(["youco_contact", "youco_contact_name", "contact"]),
+    youcoContact: idx(["youco_contact", "youco_contact_name", "youcocontact"]),
     hyperlink: idx(["hyperlink", "url", "link", "website"]),
     notes: idx(["notes", "note"]),
+    // (Section 3 will add payment_method and payment_day here)
   };
 
   const results: SupplierForm[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-    const name = col.name >= 0 ? (cells[col.name] ?? "") : "";
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i];
+    const name = col.name >= 0 ? (cells[col.name] ?? "").trim() : "";
     if (!name) continue;
     results.push({
       name,
-      property: col.property >= 0 ? (cells[col.property] ?? "ALL") || "ALL" : "ALL",
-      accountNumber: col.accountNumber >= 0 ? (cells[col.accountNumber] ?? "") : "",
-      addressPostcode: col.addressPostcode >= 0 ? (cells[col.addressPostcode] ?? "") : "",
-      contactPhone: col.contactPhone >= 0 ? (cells[col.contactPhone] ?? "") : "",
-      email: col.email >= 0 ? (cells[col.email] ?? "") : "",
-      youcoContact: col.youcoContact >= 0 ? (cells[col.youcoContact] ?? "") : "",
-      hyperlink: col.hyperlink >= 0 ? (cells[col.hyperlink] ?? "") : "",
-      notes: col.notes >= 0 ? (cells[col.notes] ?? "") : "",
+      property: col.property >= 0 ? (cells[col.property]?.trim() ?? "ALL") || "ALL" : "ALL",
+      accountNumber: col.accountNumber >= 0 ? (cells[col.accountNumber]?.trim() ?? "") : "",
+      addressPostcode: col.addressPostcode >= 0 ? (cells[col.addressPostcode]?.trim() ?? "") : "",
+      contactPhone: col.contactPhone >= 0 ? (cells[col.contactPhone]?.trim() ?? "") : "",
+      email: col.email >= 0 ? (cells[col.email]?.trim() ?? "") : "",
+      youcoContact: col.youcoContact >= 0 ? (cells[col.youcoContact]?.trim() ?? "") : "",
+      hyperlink: col.hyperlink >= 0 ? (cells[col.hyperlink]?.trim() ?? "") : "",
+      notes: col.notes >= 0 ? (cells[col.notes]?.trim() ?? "") : "",
     });
   }
   return results;
