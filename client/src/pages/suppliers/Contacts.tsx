@@ -621,7 +621,8 @@ export default function SuppliersContactsPage() {
                 <Th label="YouCo Contact" sortable sk="youcoContact" />
                 <Th label="Method" sortable sk="paymentMethod" className="w-[60px]" />
                 <Th label="Day" sortable sk="paymentDay" className="w-[50px]" />
-                <Th label="Link" />
+                <Th label="Link" className="w-10" />
+                <Th label="Notes" className="w-36" />
                 {canEdit && <Th label="" className="w-16" />}
               </tr>
             </thead>
@@ -630,14 +631,6 @@ export default function SuppliersContactsPage() {
                 <tr key={s.id} className="hover:bg-gray-50 group">
                   <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">
                     {s.name}
-                    {s.notes && (
-                      <span
-                        title={s.notes}
-                        className="ml-1.5 text-gray-400 cursor-help text-xs"
-                      >
-                        ℹ
-                      </span>
-                    )}
                   </td>
                   <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{s.property || "ALL"}</td>
                   <td className="px-3 py-2 text-gray-600 font-mono text-xs">{s.accountNumber ?? "—"}</td>
@@ -669,14 +662,22 @@ export default function SuppliersContactsPage() {
                         href={s.hyperlink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-youco-blue hover:underline"
+                        className="text-youco-blue hover:opacity-70"
+                        title={s.hyperlink}
                       >
-                        <ExternalLink size={12} />
-                        Link
+                        <ExternalLink size={13} />
                       </a>
-                    ) : (
-                      "—"
-                    )}
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 max-w-[144px]">
+                    {s.notes ? (
+                      <span
+                        title={s.notes}
+                        className="block truncate text-xs text-gray-400 cursor-help"
+                      >
+                        {s.notes}
+                      </span>
+                    ) : null}
                   </td>
                   {canEdit && (
                     <td className="px-3 py-2">
