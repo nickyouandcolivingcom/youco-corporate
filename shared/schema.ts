@@ -57,6 +57,8 @@ export const suppliers = pgTable("suppliers", {
   youcoContact: text("youco_contact"),
   hyperlink: text("hyperlink"),
   notes: text("notes"),
+  paymentMethod: text("payment_method"),
+  paymentDay: integer("payment_day"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -72,6 +74,8 @@ export const insertUserSchema = createInsertSchema(users, {
 export const insertSupplierSchema = createInsertSchema(suppliers, {
   name: z.string().min(1),
   property: z.string().min(1).default("ALL"),
+  paymentMethod: z.string().nullable().optional(),
+  paymentDay: z.number().int().min(1).max(31).nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({

@@ -34,6 +34,8 @@ interface SupplierForm {
   youcoContact: string;
   hyperlink: string;
   notes: string;
+  paymentMethod: string | null;
+  paymentDay: number | null;
 }
 
 const EMPTY_FORM: SupplierForm = {
@@ -46,6 +48,8 @@ const EMPTY_FORM: SupplierForm = {
   youcoContact: "",
   hyperlink: "",
   notes: "",
+  paymentMethod: null,
+  paymentDay: null,
 };
 
 const EMAIL_TEMPLATE_SUBJECT = "Updated Correspondence Address — You & Co. Living Limited";
@@ -157,7 +161,11 @@ function useCsvImport() {
 
 function nullify(form: SupplierForm) {
   return Object.fromEntries(
-    Object.entries(form).map(([k, v]) => [k, v.trim() === "" ? null : v.trim()])
+    Object.entries(form).map(([k, v]) => {
+      if (v === null || v === undefined) return [k, null];
+      if (typeof v === "number") return [k, v];
+      return [k, v.trim() === "" ? null : v.trim()];
+    })
   );
 }
 
@@ -193,7 +201,8 @@ function parseCsv(text: string): SupplierForm[] {
     youcoContact: idx(["youco_contact", "youco_contact_name", "youcocontact"]),
     hyperlink: idx(["hyperlink", "url", "link", "website"]),
     notes: idx(["notes", "note"]),
-    // (Section 3 will add payment_method and payment_day here)
+    paymentMethod: idx(["payment_method", "pay_method", "method", "paymentmethod"]),
+    paymentDay: idx(["payment_day", "pay_day", "day", "paymentday"]),
   };
 
   const results: SupplierForm[] = [];
@@ -201,6 +210,8 @@ function parseCsv(text: string): SupplierForm[] {
     const cells = rows[i];
     const name = col.name >= 0 ? (cells[col.name] ?? "").trim() : "";
     if (!name) continue;
+    const rawDay = col.paymentDay >= 0 ? (cells[col.paymentDay]?.trim() ?? "") : "";
+    const parsedDay = rawDay ? parseInt(rawDay, 10) : null;
     results.push({
       name,
       property: col.property >= 0 ? (cells[col.property]?.trim() ?? "ALL") || "ALL" : "ALL",
@@ -211,6 +222,8 @@ function parseCsv(text: string): SupplierForm[] {
       youcoContact: col.youcoContact >= 0 ? (cells[col.youcoContact]?.trim() ?? "") : "",
       hyperlink: col.hyperlink >= 0 ? (cells[col.hyperlink]?.trim() ?? "") : "",
       notes: col.notes >= 0 ? (cells[col.notes]?.trim() ?? "") : "",
+      paymentMethod: col.paymentMethod >= 0 ? (cells[col.paymentMethod]?.trim() || null) : null,
+      paymentDay: parsedDay && parsedDay >= 1 && parsedDay <= 31 ? parsedDay : null,
     });
   }
   return results;
@@ -218,9 +231,16 @@ function parseCsv(text: string): SupplierForm[] {
 
 function sortSuppliers(rows: Supplier[], key: SortKey, dir: SortDir): Supplier[] {
   return [...rows].sort((a, b) => {
-    const av = a[key] ?? "";
-    const bv = b[key] ?? "";
-    const cmp = String(av).localeCompare(String(bv), "en-GB", { sensitivity: "base" });
+    const av = a[key];
+    const bv = b[key];
+    if (key === "paymentDay") {
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = (av as number) - (bv as number);
+      return dir === "asc" ? cmp : -cmp;
+    }
+    const cmp = String(av ?? "").localeCompare(String(bv ?? ""), "en-GB", { sensitivity: "base" });
     return dir === "asc" ? cmp : -cmp;
   });
 }
@@ -301,6 +321,39 @@ function SupplierFormFields({
       </div>
       <Field label="YouCo Contact" value={form.youcoContact} onChange={set("youcoContact")} placeholder="Nick / Joph" />
       <Field label="Hyperlink" value={form.hyperlink} onChange={set("hyperlink")} placeholder="https://..." />
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Payment Method</label>
+          <select
+            value={form.paymentMethod ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value || null }))}
+            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-youco-blue/30"
+          >
+            <option value="">—</option>
+            <option>DD</option>
+            <option>SO</option>
+            <option>TRF</option>
+            <option>BACS</option>
+            <option>CARD</option>
+            <option>CHEQUE</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Payment Day</label>
+          <input
+            type="number"
+            min="1"
+            max="31"
+            value={form.paymentDay ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setForm((f) => ({ ...f, paymentDay: v ? parseInt(v, 10) : null }));
+            }}
+            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-youco-blue/30"
+          />
+        </div>
+      </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
         <textarea
@@ -379,6 +432,8 @@ export default function SuppliersContactsPage() {
       youcoContact: s.youcoContact ?? "",
       hyperlink: s.hyperlink ?? "",
       notes: s.notes ?? "",
+      paymentMethod: s.paymentMethod ?? null,
+      paymentDay: s.paymentDay ?? null,
     });
   }
 
@@ -564,6 +619,8 @@ export default function SuppliersContactsPage() {
                 <Th label="Phone" />
                 <Th label="Email" />
                 <Th label="YouCo Contact" sortable sk="youcoContact" />
+                <Th label="Method" sortable sk="paymentMethod" className="w-[60px]" />
+                <Th label="Day" sortable sk="paymentDay" className="w-[50px]" />
                 <Th label="Link" />
                 {canEdit && <Th label="" className="w-16" />}
               </tr>
@@ -604,6 +661,8 @@ export default function SuppliersContactsPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{s.youcoContact ?? "—"}</td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">{s.paymentMethod ?? "—"}</td>
+                  <td className="px-3 py-2 text-gray-600 text-right tabular-nums text-xs">{s.paymentDay ?? "—"}</td>
                   <td className="px-3 py-2 text-gray-600">
                     {s.hyperlink ? (
                       <a

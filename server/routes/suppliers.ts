@@ -44,6 +44,8 @@ const csvRowSchema = z.object({
   youcoContact: z.string().optional().nullable(),
   hyperlink: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  paymentMethod: z.string().optional().nullable(),
+  paymentDay: z.coerce.number().int().min(1).max(31).nullable().optional(),
 });
 
 router.post("/csv-import", requireContributor, async (req, res) => {
@@ -62,6 +64,8 @@ router.post("/csv-import", requireContributor, async (req, res) => {
     youcoContact: r.youcoContact ?? null,
     hyperlink: r.hyperlink ?? null,
     notes: r.notes ?? null,
+    paymentMethod: r.paymentMethod ?? null,
+    paymentDay: r.paymentDay ?? null,
     updatedAt: sql`now()`,
   }));
 
@@ -146,6 +150,8 @@ const upsertSchema = z.object({
   youcoContact: z.string().nullable().optional(),
   hyperlink: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  paymentMethod: z.string().nullable().optional(),
+  paymentDay: z.number().int().min(1).max(31).nullable().optional(),
 });
 
 router.post("/", requireContributor, async (req, res) => {
