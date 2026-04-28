@@ -3,6 +3,8 @@ import { useUser } from "@/hooks/useAuth";
 import LoginPage from "@/pages/login";
 import Layout from "@/components/Layout";
 import SuppliersContactsPage from "@/pages/suppliers/Contacts";
+import PortfolioPage from "@/pages/portfolio/Portfolio";
+import ComingSoon from "@/pages/ComingSoon";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useUser();
@@ -23,15 +25,52 @@ function AppRoutes() {
   return (
     <Switch>
       <Route path="/">
-        <Redirect to="/suppliers/contacts" />
+        <Redirect to="/portfolio" />
+      </Route>
+      <Route path="/portfolio">
+        <Layout title="Wealth Statement">
+          <PortfolioPage />
+        </Layout>
       </Route>
       <Route path="/suppliers/contacts">
         <Layout title="Supplier Contacts">
           <SuppliersContactsPage />
         </Layout>
       </Route>
+      <Route path="/mortgages">
+        <Layout title="Mortgages">
+          <ComingSoon
+            title="Mortgages"
+            description="Lender, account, balance, rate, fixed-end, ERC schedule. Coming next."
+          />
+        </Layout>
+      </Route>
+      <Route path="/energy">
+        <Layout title="Energy">
+          <ComingSoon
+            title="Energy"
+            description="Octopus, British Gas. MPAN/MPRN, tariff, meter readings."
+          />
+        </Layout>
+      </Route>
+      <Route path="/water">
+        <Layout title="Water">
+          <ComingSoon
+            title="Water"
+            description="Severn Trent, Dyr Cymru. Supply ref, meter readings."
+          />
+        </Layout>
+      </Route>
+      <Route path="/broadband">
+        <Layout title="Broadband">
+          <ComingSoon
+            title="Broadband"
+            description="BT and others. Circuit ID, speed, account."
+          />
+        </Layout>
+      </Route>
       <Route>
-        <Redirect to="/suppliers/contacts" />
+        <Redirect to="/portfolio" />
       </Route>
     </Switch>
   );

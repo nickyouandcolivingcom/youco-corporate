@@ -14,6 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:prod": "tsx script/migrate.ts",
     "db:seed": "tsx script/seed.ts",
+    "db:seed-portfolio": "tsx script/seed-portfolio.ts",
     "db:backfill-payments": "tsx script/backfill-payment-fields.ts"
   },
   "dependencies": {

@@ -5,6 +5,8 @@ import {
   timestamp,
   pgEnum,
   integer,
+  numeric,
+  date,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -63,6 +65,24 @@ export const suppliers = pgTable("suppliers", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const portfolioProperties = pgTable("portfolio_properties", {
+  id: serial("id").primaryKey(),
+  address: text("address").notNull(),
+  postcode: text("postcode"),
+  ownershipEntity: text("ownership_entity").notNull().default("YCO"),
+  beneficialSharePct: numeric("beneficial_share_pct", { precision: 5, scale: 2 }),
+  purchaseDate: date("purchase_date"),
+  purchasePrice: numeric("purchase_price", { precision: 12, scale: 2 }),
+  capitalCosts: numeric("capital_costs", { precision: 12, scale: 2 }),
+  currentValueRics: numeric("current_value_rics", { precision: 12, scale: 2 }),
+  currentValueLatent: numeric("current_value_latent", { precision: 12, scale: 2 }),
+  grossAnnualRent: numeric("gross_annual_rent", { precision: 12, scale: 2 }),
+  lettingUnits: text("letting_units"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Zod schemas (insert) ─────────────────────────────────────────────────────
 
 export const insertUserSchema = createInsertSchema(users, {
@@ -78,6 +98,21 @@ export const insertSupplierSchema = createInsertSchema(suppliers, {
   paymentDay: z.number().int().min(1).max(31).nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertPortfolioPropertySchema = createInsertSchema(portfolioProperties, {
+  address: z.string().min(1),
+  ownershipEntity: z.enum(["YCO", "MONOCROM"]).default("YCO"),
+  postcode: z.string().nullable().optional(),
+  beneficialSharePct: z.string().nullable().optional(),
+  purchaseDate: z.string().nullable().optional(),
+  purchasePrice: z.string().nullable().optional(),
+  capitalCosts: z.string().nullable().optional(),
+  currentValueRics: z.string().nullable().optional(),
+  currentValueLatent: z.string().nullable().optional(),
+  grossAnnualRent: z.string().nullable().optional(),
+  lettingUnits: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
   id: true,
   timestamp: true,
@@ -90,6 +125,9 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+
+export type PortfolioProperty = typeof portfolioProperties.$inferSelect;
+export type InsertPortfolioProperty = z.infer<typeof insertPortfolioPropertySchema>;
 
 export type AuditLog = typeof auditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

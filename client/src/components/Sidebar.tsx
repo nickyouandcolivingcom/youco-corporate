@@ -1,7 +1,15 @@
 import { Link, useLocation } from "wouter";
 import { useUser, useLogout } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { ContactRound, LogOut } from "lucide-react";
+import {
+  ContactRound,
+  LogOut,
+  Building2,
+  Landmark,
+  Zap,
+  Droplets,
+  Wifi,
+} from "lucide-react";
 
 interface NavItem {
   label: string;
@@ -11,12 +19,62 @@ interface NavItem {
 
 const NAV: Array<{ section: string; items: NavItem[] }> = [
   {
+    section: "PORTFOLIO",
+    items: [
+      {
+        label: "Wealth Statement",
+        href: "/portfolio",
+        icon: <Building2 size={16} />,
+      },
+    ],
+  },
+  {
     section: "SUPPLIERS",
     items: [
       {
         label: "Contacts",
         href: "/suppliers/contacts",
         icon: <ContactRound size={16} />,
+      },
+    ],
+  },
+  {
+    section: "MORTGAGES",
+    items: [
+      {
+        label: "Loans",
+        href: "/mortgages",
+        icon: <Landmark size={16} />,
+      },
+    ],
+  },
+  {
+    section: "ENERGY",
+    items: [
+      {
+        label: "Accounts",
+        href: "/energy",
+        icon: <Zap size={16} />,
+      },
+    ],
+  },
+  {
+    section: "WATER",
+    items: [
+      {
+        label: "Accounts",
+        href: "/water",
+        icon: <Droplets size={16} />,
+      },
+    ],
+  },
+  {
+    section: "BROADBAND",
+    items: [
+      {
+        label: "Accounts",
+        href: "/broadband",
+        icon: <Wifi size={16} />,
       },
     ],
   },
