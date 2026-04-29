@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { PROPERTY_CODE_VALUES } from "./property-codes.js";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,11 @@ export const auditActionEnum = pgEnum("audit_action", [
   "updated",
   "deleted",
 ]);
+
+export const FUEL_TYPES = ["Electricity", "Gas", "Dual"] as const;
+export const ENERGY_STATUSES = ["Active", "Closed", "Disputed"] as const;
+export type FuelType = (typeof FUEL_TYPES)[number];
+export type EnergyStatus = (typeof ENERGY_STATUSES)[number];
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -83,6 +89,29 @@ export const portfolioProperties = pgTable("portfolio_properties", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const energyAccounts = pgTable("energy_accounts", {
+  id: serial("id").primaryKey(),
+  supplier: text("supplier").notNull(),
+  propertyCode: text("property_code").notNull(),
+  accountNumber: text("account_number"),
+  fuelType: text("fuel_type").notNull().default("Electricity"),
+  mpan: text("mpan"),
+  mprn: text("mprn"),
+  tariffName: text("tariff_name"),
+  unitRatePence: numeric("unit_rate_pence", { precision: 8, scale: 4 }),
+  standingChargePence: numeric("standing_charge_pence", { precision: 8, scale: 4 }),
+  contractEndDate: date("contract_end_date"),
+  lastReadingValue: numeric("last_reading_value", { precision: 12, scale: 2 }),
+  lastReadingDate: date("last_reading_date"),
+  paymentMethod: text("payment_method"),
+  paymentDay: integer("payment_day"),
+  status: text("status").notNull().default("Active"),
+  disputeNotes: text("dispute_notes"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Zod schemas (insert) ─────────────────────────────────────────────────────
 
 export const insertUserSchema = createInsertSchema(users, {
@@ -113,6 +142,26 @@ export const insertPortfolioPropertySchema = createInsertSchema(portfolioPropert
   notes: z.string().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertEnergyAccountSchema = createInsertSchema(energyAccounts, {
+  supplier: z.string().min(1),
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  fuelType: z.enum(FUEL_TYPES).default("Electricity"),
+  status: z.enum(ENERGY_STATUSES).default("Active"),
+  accountNumber: z.string().nullable().optional(),
+  mpan: z.string().nullable().optional(),
+  mprn: z.string().nullable().optional(),
+  tariffName: z.string().nullable().optional(),
+  unitRatePence: z.string().nullable().optional(),
+  standingChargePence: z.string().nullable().optional(),
+  contractEndDate: z.string().nullable().optional(),
+  lastReadingValue: z.string().nullable().optional(),
+  lastReadingDate: z.string().nullable().optional(),
+  paymentMethod: z.string().nullable().optional(),
+  paymentDay: z.number().int().min(1).max(31).nullable().optional(),
+  disputeNotes: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
   id: true,
   timestamp: true,
@@ -128,6 +177,9 @@ export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 
 export type PortfolioProperty = typeof portfolioProperties.$inferSelect;
 export type InsertPortfolioProperty = z.infer<typeof insertPortfolioPropertySchema>;
+
+export type EnergyAccount = typeof energyAccounts.$inferSelect;
+export type InsertEnergyAccount = z.infer<typeof insertEnergyAccountSchema>;
 
 export type AuditLog = typeof auditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

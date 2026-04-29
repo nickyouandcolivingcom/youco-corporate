@@ -29,6 +29,13 @@
       "when": 1777843200000,
       "tag": "0003_portfolio",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777929600000,
+      "tag": "0004_energy",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS "energy_accounts" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"supplier" text NOT NULL,
+	"property_code" text NOT NULL,
+	"account_number" text,
+	"fuel_type" text NOT NULL DEFAULT 'Electricity',
+	"mpan" text,
+	"mprn" text,
+	"tariff_name" text,
+	"unit_rate_pence" numeric(8,4),
+	"standing_charge_pence" numeric(8,4),
+	"contract_end_date" date,
+	"last_reading_value" numeric(12,2),
+	"last_reading_date" date,
+	"payment_method" text,
+	"payment_day" integer,
+	"status" text NOT NULL DEFAULT 'Active',
+	"dispute_notes" text,
+	"notes" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);

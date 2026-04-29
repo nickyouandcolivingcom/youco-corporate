@@ -5,6 +5,7 @@ import authRouter from "./routes/auth.js";
 import usersRouter from "./routes/users.js";
 import suppliersRouter from "./routes/suppliers.js";
 import portfolioRouter from "./routes/portfolio.js";
+import energyRouter from "./routes/energy.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required");
@@ -24,6 +25,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/suppliers", suppliersRouter);
 app.use("/api/portfolio", portfolioRouter);
+app.use("/api/energy", energyRouter);
 
 // ─── Serve frontend in production ─────────────────────────────────────────────
 if (process.env.NODE_ENV === "production") {

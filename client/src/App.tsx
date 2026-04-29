@@ -4,6 +4,7 @@ import LoginPage from "@/pages/login";
 import Layout from "@/components/Layout";
 import SuppliersContactsPage from "@/pages/suppliers/Contacts";
 import PortfolioPage from "@/pages/portfolio/Portfolio";
+import EnergyPage from "@/pages/energy/Energy";
 import ComingSoon from "@/pages/ComingSoon";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -47,10 +48,7 @@ function AppRoutes() {
       </Route>
       <Route path="/energy">
         <Layout title="Energy">
-          <ComingSoon
-            title="Energy"
-            description="Octopus, British Gas. MPAN/MPRN, tariff, meter readings."
-          />
+          <EnergyPage />
         </Layout>
       </Route>
       <Route path="/water">
