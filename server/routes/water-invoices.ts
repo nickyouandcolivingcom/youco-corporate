@@ -252,6 +252,8 @@ interface ParserDef {
     row?: WaterInvoiceRow;
     error?: string;
     accountNumber?: string;
+    matchedByAddress?: string;
+    supplyAddress?: string;
   };
 }
 
@@ -277,6 +279,8 @@ router.post(
       return res.status(400).json({ error: parsed.error.issues[0].message });
     }
 
+    // Build a mutable account map so newly-discovered accounts (auto-created
+    // mid-loop) are visible to subsequent PDFs in the same batch.
     const accounts = await db.select().from(waterAccounts);
     const accountMap: Record<string, string> = {};
     for (const a of accounts) {
@@ -291,6 +295,14 @@ router.post(
       status: "ok" | "error" | "no_parser";
       row?: WaterInvoiceRow;
       error?: string;
+      autoCreatedAccount?: boolean;
+    }> = [];
+
+    const autoCreatedAccounts: Array<{
+      supplier: string;
+      propertyCode: string;
+      accountNumber: string;
+      supplyAddress?: string;
     }> = [];
 
     for (const f of parsed.data.files) {
@@ -317,6 +329,36 @@ router.post(
           });
           continue;
         }
+
+        // If the property was matched via address (not the account map),
+        // auto-create the water_account row so subsequent imports skip the
+        // address fallback. Updates the in-memory accountMap too so duplicate
+        // PDFs in the same batch resolve via the map next time round.
+        let autoCreatedAccount = false;
+        if (
+          out.matchedByAddress &&
+          out.accountNumber &&
+          !accountMap[out.accountNumber]
+        ) {
+          await db.insert(waterAccounts).values({
+            supplier: matched.supplier,
+            propertyCode: out.matchedByAddress,
+            accountNumber: out.accountNumber,
+            supplyAddress: out.supplyAddress ?? null,
+            billingFrequency: "Annual",
+            status: "Active",
+            notes: "Auto-created from PDF import",
+          });
+          accountMap[out.accountNumber] = out.matchedByAddress;
+          autoCreatedAccount = true;
+          autoCreatedAccounts.push({
+            supplier: matched.supplier,
+            propertyCode: out.matchedByAddress,
+            accountNumber: out.accountNumber,
+            supplyAddress: out.supplyAddress,
+          });
+        }
+
         results.push({
           file: f.name,
           supplier: matched.supplier,
@@ -324,6 +366,7 @@ router.post(
           propertyCode: out.row?.propertyCode,
           status: "ok",
           row: out.row,
+          autoCreatedAccount,
         });
       } catch (err) {
         results.push({
@@ -340,6 +383,7 @@ router.post(
       received: parsed.data.files.length,
       parsed: okRows.length,
       failed: results.filter((r) => r.status !== "ok").length,
+      autoCreatedAccounts,
       results,
       rows: okRows,
     });

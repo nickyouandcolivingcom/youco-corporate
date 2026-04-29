@@ -17,6 +17,7 @@
  */
 
 import type { WaterInvoiceRow } from "./water-types.js";
+import { matchAddressToPropertyCode } from "./address-match.js";
 
 interface AccountMap {
   /** account_number → propertyCode */
@@ -58,6 +59,11 @@ export interface SevernTrentParseResult {
   row?: WaterInvoiceRow;
   error?: string;
   accountNumber?: string;
+  /** The address-derived property code, used when the account number isn't
+   *  yet in the account map. The endpoint can auto-create a water_account
+   *  row using this. */
+  matchedByAddress?: string;
+  supplyAddress?: string;
 }
 
 export function parseSevernTrentBill(
@@ -79,12 +85,37 @@ export function parseSevernTrentBill(
   }
   const accountNumber = accMatch[1].trim();
 
-  const propertyCode = accountMap[accountNumber];
+  // Extract the supply address — useful both as fallback property mapping
+  // and for storing on the water_account row when auto-creating.
+  // Format varies. Try the most common Severn Trent layouts:
+  //   - "Supply address\n16 Richmond Crescent\nVicars Cross, Chester, CH3 5PB"
+  //   - "SUPPLYADDRESS\n16RICHMONDCRESCENT,\nVICARSCROSS\nCHESTER\nCH35PB"
+  //   - "Supply address: 16 Richmond Crescent..."
+  // We capture a generous window after the label and use it for fuzzy
+  // matching; spaces, commas and case are normalised by the matcher.
+  const addrMatch =
+    stripped.match(/Supply ?address[:\s]+([\s\S]{5,200}?)(?:Issue|Billing|Page|$)/i) ??
+    text.match(/SUPPLYADDRESS\s*([\s\S]{5,200}?)(?:ISSUEDATE|BILLINGPERIOD|Page|$)/i);
+  const supplyAddress = addrMatch ? addrMatch[1].replace(/\s+/g, " ").trim() : undefined;
+
+  // Resolve property code: account number map first, address fallback.
+  let propertyCode = accountMap[accountNumber];
+  let matchedByAddress: string | undefined;
+  if (!propertyCode && supplyAddress) {
+    const addrCode = matchAddressToPropertyCode(supplyAddress);
+    if (addrCode) {
+      propertyCode = addrCode;
+      matchedByAddress = addrCode;
+    }
+  }
   if (!propertyCode) {
     return {
       ok: false,
       accountNumber,
-      error: `Account ${accountNumber} not in account map — add it to Water → Accounts first`,
+      supplyAddress,
+      error: supplyAddress
+        ? `Could not match account ${accountNumber} or supply address "${supplyAddress}" to a property — add the account to Water → Accounts manually`
+        : `Account ${accountNumber} not in account map and no supply address found`,
     };
   }
 
@@ -209,6 +240,8 @@ export function parseSevernTrentBill(
   return {
     ok: true,
     accountNumber,
+    matchedByAddress,
+    supplyAddress,
     row: {
       propertyCode,
       supplier: "Severn Trent",
