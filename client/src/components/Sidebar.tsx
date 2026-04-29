@@ -38,7 +38,7 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "MORTGAGES",
     items: [
-      { label: "Loans", href: "/mortgages", icon: <Landmark size={16} /> },
+      { label: "Loans", href: "/mortgages", icon: <Landmark size={16} />, exact: true },
     ],
   },
   {

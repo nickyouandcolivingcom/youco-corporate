@@ -12,6 +12,7 @@ import docsRouter from "./routes/docs.js";
 import energyPdfImportRouter from "./routes/energy-pdf-import.js";
 import waterRouter from "./routes/water.js";
 import waterInvoicesRouter from "./routes/water-invoices.js";
+import mortgagesRouter from "./routes/mortgages.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required");
@@ -37,6 +38,7 @@ app.use("/api/energy-pdf-import", energyPdfImportRouter);
 app.use("/api/octopus", octopusRouter);
 app.use("/api/water", waterRouter);
 app.use("/api/water-invoices", waterInvoicesRouter);
+app.use("/api/mortgages", mortgagesRouter);
 app.use("/api/docs", docsRouter);
 
 // ─── Serve frontend in production ─────────────────────────────────────────────

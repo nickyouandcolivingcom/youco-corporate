@@ -203,6 +203,32 @@ export const waterInvoices = pgTable("water_invoices", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const mortgages = pgTable("mortgages", {
+  id: serial("id").primaryKey(),
+  lender: text("lender").notNull(),
+  propertyCode: text("property_code").notNull(),
+  borrowerEntity: text("borrower_entity").notNull().default("YCO"),
+  accountNumber: text("account_number"),
+  lenderReference: text("lender_reference"),
+  offerDate: date("offer_date"),
+  completionDate: date("completion_date"),
+  expiryDate: date("expiry_date"),
+  loanAmount: numeric("loan_amount", { precision: 12, scale: 2 }),
+  valuation: numeric("valuation", { precision: 12, scale: 2 }),
+  termMonths: integer("term_months"),
+  repaymentType: text("repayment_type"),
+  fixedRatePct: numeric("fixed_rate_pct", { precision: 6, scale: 3 }),
+  fixedPeriodMonths: integer("fixed_period_months"),
+  fixedEndDate: date("fixed_end_date"),
+  reversionaryMarginPct: numeric("reversionary_margin_pct", { precision: 6, scale: 3 }),
+  reversionaryFloorPct: numeric("reversionary_floor_pct", { precision: 6, scale: 3 }),
+  monthlyPaymentFixed: numeric("monthly_payment_fixed", { precision: 12, scale: 2 }),
+  status: text("status").notNull().default("Active"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const docs = pgTable("docs", {
   id: serial("id").primaryKey(),
   slug: text("slug").notNull().unique(),
@@ -317,6 +343,29 @@ export const insertWaterInvoiceSchema = createInsertSchema(waterInvoices, {
   waterAccountId: z.number().int().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertMortgageSchema = createInsertSchema(mortgages, {
+  lender: z.string().min(1),
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  borrowerEntity: z.enum(["YCO", "MONOCROM"]).default("YCO"),
+  accountNumber: z.string().nullable().optional(),
+  lenderReference: z.string().nullable().optional(),
+  offerDate: z.string().nullable().optional(),
+  completionDate: z.string().nullable().optional(),
+  expiryDate: z.string().nullable().optional(),
+  loanAmount: z.string().nullable().optional(),
+  valuation: z.string().nullable().optional(),
+  termMonths: z.number().int().nullable().optional(),
+  repaymentType: z.string().nullable().optional(),
+  fixedRatePct: z.string().nullable().optional(),
+  fixedPeriodMonths: z.number().int().nullable().optional(),
+  fixedEndDate: z.string().nullable().optional(),
+  reversionaryMarginPct: z.string().nullable().optional(),
+  reversionaryFloorPct: z.string().nullable().optional(),
+  monthlyPaymentFixed: z.string().nullable().optional(),
+  status: z.enum(["Active", "Redeemed", "Pending"]).default("Active"),
+  notes: z.string().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertDocSchema = createInsertSchema(docs, {
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, "slug must be lowercase, hyphens only"),
   title: z.string().min(1),
@@ -355,6 +404,9 @@ export type InsertWaterAccount = z.infer<typeof insertWaterAccountSchema>;
 
 export type WaterInvoice = typeof waterInvoices.$inferSelect;
 export type InsertWaterInvoice = z.infer<typeof insertWaterInvoiceSchema>;
+
+export type Mortgage = typeof mortgages.$inferSelect;
+export type InsertMortgage = z.infer<typeof insertMortgageSchema>;
 
 export type Doc = typeof docs.$inferSelect;
 export type InsertDoc = z.infer<typeof insertDocSchema>;

@@ -10,6 +10,7 @@ import EnergySyncPage from "@/pages/energy/Sync";
 import EnergyAnalyticsPage from "@/pages/energy/Analytics";
 import WaterAccountsPage from "@/pages/water/Accounts";
 import WaterInvoicesPage from "@/pages/water/Invoices";
+import MortgagesPage from "@/pages/mortgages/Loans";
 import DocsListPage from "@/pages/docs/List";
 import DocViewPage from "@/pages/docs/View";
 import ComingSoon from "@/pages/ComingSoon";
@@ -47,10 +48,7 @@ function AppRoutes() {
       </Route>
       <Route path="/mortgages">
         <Layout title="Mortgages">
-          <ComingSoon
-            title="Mortgages"
-            description="Lender, account, balance, rate, fixed-end, ERC schedule. Coming next."
-          />
+          <MortgagesPage />
         </Layout>
       </Route>
       <Route path="/energy/invoices">
