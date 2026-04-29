@@ -24,10 +24,12 @@ export const auditActionEnum = pgEnum("audit_action", [
 ]);
 
 export const FUEL_TYPES = ["Electricity", "Gas", "Dual"] as const;
+export const READING_FUEL_TYPES = ["Electricity", "Gas"] as const;
 export const ENERGY_STATUSES = ["Active", "Closed", "Disputed"] as const;
 export const INVOICE_SOURCES = ["manual", "csv_import", "api", "ocr"] as const;
 export const READING_SOURCES = ["octopus_api", "manual"] as const;
 export type FuelType = (typeof FUEL_TYPES)[number];
+export type ReadingFuelType = (typeof READING_FUEL_TYPES)[number];
 export type EnergyStatus = (typeof ENERGY_STATUSES)[number];
 export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
 export type ReadingSource = (typeof READING_SOURCES)[number];
@@ -102,7 +104,8 @@ export const energyAccounts = pgTable("energy_accounts", {
   fuelType: text("fuel_type").notNull().default("Electricity"),
   mpan: text("mpan"),
   mprn: text("mprn"),
-  meterSerial: text("meter_serial"),
+  electricityMeterSerial: text("electricity_meter_serial"),
+  gasMeterSerial: text("gas_meter_serial"),
   tariffName: text("tariff_name"),
   tariffCode: text("tariff_code"),
   unitRatePence: numeric("unit_rate_pence", { precision: 8, scale: 4 }),
@@ -141,6 +144,7 @@ export const energyReadings = pgTable(
   {
     id: serial("id").primaryKey(),
     energyAccountId: integer("energy_account_id").notNull(),
+    fuelType: text("fuel_type").notNull().default("Electricity"),
     readingDate: date("reading_date").notNull(),
     kwh: numeric("kwh", { precision: 12, scale: 4 }).notNull(),
     costPence: numeric("cost_pence", { precision: 12, scale: 2 }),
@@ -149,8 +153,9 @@ export const energyReadings = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    accountDateUnique: unique("energy_readings_account_date_uniq").on(
+    accountFuelDateUnique: unique("energy_readings_account_fuel_date_uniq").on(
       table.energyAccountId,
+      table.fuelType,
       table.readingDate
     ),
   })
@@ -194,7 +199,8 @@ export const insertEnergyAccountSchema = createInsertSchema(energyAccounts, {
   accountNumber: z.string().nullable().optional(),
   mpan: z.string().nullable().optional(),
   mprn: z.string().nullable().optional(),
-  meterSerial: z.string().nullable().optional(),
+  electricityMeterSerial: z.string().nullable().optional(),
+  gasMeterSerial: z.string().nullable().optional(),
   tariffName: z.string().nullable().optional(),
   tariffCode: z.string().nullable().optional(),
   unitRatePence: z.string().nullable().optional(),

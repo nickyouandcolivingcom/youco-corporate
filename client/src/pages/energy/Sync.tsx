@@ -15,7 +15,9 @@ interface DiscoverResult {
     status: "ok" | "error" | "skipped";
     mpan?: string | null;
     mprn?: string | null;
-    meterSerial?: string | null;
+    electricityMeterSerial?: string | null;
+    gasMeterSerial?: string | null;
+    fuelType?: string;
     tariffCode?: string | null;
     error?: string;
   }>;
@@ -23,7 +25,8 @@ interface DiscoverResult {
 
 interface SyncResult {
   period: { from: string; to: string };
-  total: number;
+  accountsTotal: number;
+  fuelRowsTotal: number;
   ok: number;
   errors: number;
   skipped: number;
@@ -31,6 +34,7 @@ interface SyncResult {
     accountId: number;
     accountNumber: string | null;
     propertyCode: string;
+    fuelType: "Electricity" | "Gas";
     status: "ok" | "error" | "skipped";
     daysWritten?: number;
     totalKwh?: number;
@@ -103,7 +107,7 @@ export default function EnergySyncPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-5xl">
       {/* ─── Step 1: Discover ───────────────────────────────────────────────── */}
       <section className="bg-white border border-gray-200 rounded-lg p-5">
         <div className="flex items-start gap-3">
@@ -113,9 +117,10 @@ export default function EnergySyncPage() {
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-gray-900">Step 1 — Discover supply metadata</h3>
             <p className="text-sm text-gray-600 mt-0.5">
-              Walks every Octopus account in the database and fetches MPAN, meter
-              serial, and active tariff code. Run once after adding new accounts.
-              Idempotent — safe to re-run any time.
+              Walks every Octopus account in the database and fetches MPAN, MPRN,
+              electricity + gas meter serials, fuel type, and active tariff code.
+              Picks the active meter point (current agreement), not just the first.
+              Idempotent — safe to re-run.
             </p>
             <div className="mt-3">
               <button
@@ -141,7 +146,7 @@ export default function EnergySyncPage() {
                     <span className="text-gray-500">{discoverMut.data.skipped} skipped.</span>
                   )}
                 </p>
-                <details className="mt-2">
+                <details className="mt-2" open>
                   <summary className="cursor-pointer text-xs text-youco-blue">
                     Show details
                   </summary>
@@ -149,9 +154,12 @@ export default function EnergySyncPage() {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-2 py-1 text-left">Account</th>
-                        <th className="px-2 py-1 text-left">Property</th>
+                        <th className="px-2 py-1 text-left">Prop</th>
+                        <th className="px-2 py-1 text-left">Fuel</th>
                         <th className="px-2 py-1 text-left">MPAN</th>
-                        <th className="px-2 py-1 text-left">Serial</th>
+                        <th className="px-2 py-1 text-left">Elec serial</th>
+                        <th className="px-2 py-1 text-left">MPRN</th>
+                        <th className="px-2 py-1 text-left">Gas serial</th>
                         <th className="px-2 py-1 text-left">Tariff</th>
                         <th className="px-2 py-1 text-left">Status</th>
                       </tr>
@@ -161,8 +169,11 @@ export default function EnergySyncPage() {
                         <tr key={r.accountNumber}>
                           <td className="px-2 py-1 font-mono">{r.accountNumber}</td>
                           <td className="px-2 py-1 font-mono">{r.propertyCode}</td>
+                          <td className="px-2 py-1">{r.fuelType ?? "—"}</td>
                           <td className="px-2 py-1 font-mono">{r.mpan ?? "—"}</td>
-                          <td className="px-2 py-1 font-mono">{r.meterSerial ?? "—"}</td>
+                          <td className="px-2 py-1 font-mono">{r.electricityMeterSerial ?? "—"}</td>
+                          <td className="px-2 py-1 font-mono">{r.mprn ?? "—"}</td>
+                          <td className="px-2 py-1 font-mono">{r.gasMeterSerial ?? "—"}</td>
                           <td className="px-2 py-1 font-mono">{r.tariffCode ?? "—"}</td>
                           <td className="px-2 py-1">
                             <span className="inline-flex items-center gap-1">
@@ -196,14 +207,12 @@ export default function EnergySyncPage() {
             <h3 className="font-semibold text-gray-900">Step 2 — Sync daily readings</h3>
             <p className="text-sm text-gray-600 mt-0.5">
               Pulls half-hourly consumption from Octopus for the date range below
-              and aggregates to daily totals. Existing rows for the same date are
-              overwritten so re-syncing is safe.
+              and aggregates to daily totals. Dual-fuel accounts produce one row
+              per fuel. Re-syncs overwrite same-date rows.
             </p>
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  From
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
                 <input
                   type="date"
                   value={from}
@@ -212,9 +221,7 @@ export default function EnergySyncPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  To
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
                 <input
                   type="date"
                   value={to}
@@ -270,8 +277,8 @@ export default function EnergySyncPage() {
                 <p className="text-gray-700">
                   Period <strong>{syncMut.data.period.from}</strong> →{" "}
                   <strong>{syncMut.data.period.to}</strong>:{" "}
-                  <strong>{syncMut.data.ok}/{syncMut.data.total}</strong> accounts
-                  synced.
+                  <strong>{syncMut.data.ok}/{syncMut.data.fuelRowsTotal}</strong> fuel-rows
+                  synced across {syncMut.data.accountsTotal} accounts.
                   {syncMut.data.errors > 0 && (
                     <span className="text-red-600"> {syncMut.data.errors} errors.</span>
                   )}
@@ -287,18 +294,18 @@ export default function EnergySyncPage() {
                     <tr>
                       <th className="px-2 py-1 text-left">Account</th>
                       <th className="px-2 py-1 text-left">Property</th>
+                      <th className="px-2 py-1 text-left">Fuel</th>
                       <th className="px-2 py-1 text-right">Days</th>
                       <th className="px-2 py-1 text-right">Total kWh</th>
                       <th className="px-2 py-1 text-left">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {syncMut.data.summary.map((r) => (
-                      <tr key={r.accountId}>
-                        <td className="px-2 py-1 font-mono">
-                          {r.accountNumber ?? "—"}
-                        </td>
+                    {syncMut.data.summary.map((r, idx) => (
+                      <tr key={`${r.accountId}-${r.fuelType}-${idx}`}>
+                        <td className="px-2 py-1 font-mono">{r.accountNumber ?? "—"}</td>
                         <td className="px-2 py-1 font-mono">{r.propertyCode}</td>
+                        <td className="px-2 py-1">{r.fuelType}</td>
                         <td className="px-2 py-1 text-right tabular-nums">
                           {r.daysWritten ?? "—"}
                         </td>

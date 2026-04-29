@@ -17,7 +17,6 @@ function getAuthHeader(): string {
       "OCTOPUS_API_KEY env var is not set. Add it on Render → Environment."
     );
   }
-  // Basic auth: username = API key, password = empty.
   return "Basic " + Buffer.from(`${key}:`).toString("base64");
 }
 
@@ -81,6 +80,16 @@ export async function fetchAccount(accountNumber: string): Promise<OctopusAccoun
 }
 
 /**
+ * An agreement is "current" if its valid_to is null (open-ended) or a future
+ * datetime. Octopus accounts often retain closed historical agreements
+ * alongside the active one — we only care about the active one.
+ */
+function isCurrentAgreement(a: OctopusAgreement, now: Date = new Date()): boolean {
+  if (!a.valid_to) return true;
+  return new Date(a.valid_to).getTime() > now.getTime();
+}
+
+/**
  * Picks the most recent (latest valid_from) tariff agreement. Returns null
  * if there are no agreements.
  */
@@ -88,11 +97,50 @@ export function pickActiveAgreement(
   agreements: OctopusAgreement[]
 ): OctopusAgreement | null {
   if (agreements.length === 0) return null;
-  return [...agreements].sort((a, b) => {
+  // Prefer current (open-ended/future-ending) agreements.
+  const current = agreements.filter((a) => isCurrentAgreement(a));
+  const candidates = current.length > 0 ? current : agreements;
+  return [...candidates].sort((a, b) => {
     const av = a.valid_from ? new Date(a.valid_from).getTime() : 0;
     const bv = b.valid_from ? new Date(b.valid_from).getTime() : 0;
     return bv - av;
   })[0];
+}
+
+/**
+ * Picks the active meter point from a list. An account can have multiple
+ * meter points (e.g. an old closed supply + the current active one), and the
+ * order in the API response is not guaranteed to put the active one first.
+ *
+ * "Active" = has at least one current agreement (valid_to is null or future).
+ * If multiple meter points have current agreements, the one with the most
+ * recent valid_from of any current agreement wins. Falls back to the first
+ * point in the list if none are current (defensive — shouldn't happen).
+ */
+export function pickActiveMeterPoint<
+  T extends { agreements: OctopusAgreement[] }
+>(points: T[]): T | null {
+  if (points.length === 0) return null;
+  const now = new Date();
+
+  const scored = points
+    .map((p) => {
+      const currentAgreements = p.agreements.filter((a) => isCurrentAgreement(a, now));
+      if (currentAgreements.length === 0) return { p, score: -Infinity };
+      const mostRecent = Math.max(
+        ...currentAgreements.map((a) =>
+          a.valid_from ? new Date(a.valid_from).getTime() : 0
+        )
+      );
+      return { p, score: mostRecent };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  if (scored[0].score === -Infinity) {
+    // Nothing is current — fall back to the first point (matches old behaviour).
+    return points[0];
+  }
+  return scored[0].p;
 }
 
 // ─── Consumption ──────────────────────────────────────────────────────────────
@@ -110,14 +158,29 @@ interface OctopusConsumptionPage {
   results: OctopusConsumptionRow[];
 }
 
-/**
- * Fetches all half-hourly consumption rows for a meter between two ISO
- * datetimes. Follows pagination via the `next` URL.
- *
- * The Octopus API caps page_size around 25000; we request the max to
- * minimise round-trips. A ~30-day window has 30*48 = 1440 rows so a single
- * page is normally enough; the loop is defensive for longer windows.
- */
+async function fetchPaginated(
+  path: string,
+  meterDescriptor: string
+): Promise<OctopusConsumptionRow[]> {
+  const out: OctopusConsumptionRow[] = [];
+  let nextUrl: string | null = `${BASE}${path}`;
+  for (let i = 0; i < 10 && nextUrl; i++) {
+    const res = await fetch(nextUrl, {
+      headers: { Authorization: getAuthHeader() },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Octopus consumption ${res.status} for ${meterDescriptor}: ${body.slice(0, 200)}`
+      );
+    }
+    const page = (await res.json()) as OctopusConsumptionPage;
+    out.push(...page.results);
+    nextUrl = page.next;
+  }
+  return out;
+}
+
 export async function fetchElectricityConsumption(
   mpan: string,
   serialNumber: string,
@@ -130,23 +193,7 @@ export async function fetchElectricityConsumption(
     `&period_to=${encodeURIComponent(periodToIso)}` +
     `&page_size=25000` +
     `&order_by=period`;
-
-  const out: OctopusConsumptionRow[] = [];
-  let nextUrl: string | null = `${BASE}${path}`;
-  // Cap pagination to 10 pages defensively (250k rows = ~14 years half-hourly)
-  for (let i = 0; i < 10 && nextUrl; i++) {
-    const res = await fetch(nextUrl, { headers: { Authorization: getAuthHeader() } });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(
-        `Octopus consumption ${res.status} for MPAN ${mpan}: ${body.slice(0, 200)}`
-      );
-    }
-    const page = (await res.json()) as OctopusConsumptionPage;
-    out.push(...page.results);
-    nextUrl = page.next;
-  }
-  return out;
+  return fetchPaginated(path, `electricity MPAN ${mpan}`);
 }
 
 export async function fetchGasConsumption(
@@ -161,35 +208,18 @@ export async function fetchGasConsumption(
     `&period_to=${encodeURIComponent(periodToIso)}` +
     `&page_size=25000` +
     `&order_by=period`;
-
-  const out: OctopusConsumptionRow[] = [];
-  let nextUrl: string | null = `${BASE}${path}`;
-  for (let i = 0; i < 10 && nextUrl; i++) {
-    const res = await fetch(nextUrl, { headers: { Authorization: getAuthHeader() } });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(
-        `Octopus gas consumption ${res.status} for MPRN ${mprn}: ${body.slice(0, 200)}`
-      );
-    }
-    const page = (await res.json()) as OctopusConsumptionPage;
-    out.push(...page.results);
-    nextUrl = page.next;
-  }
-  return out;
+  return fetchPaginated(path, `gas MPRN ${mprn}`);
 }
 
 /**
- * Aggregates half-hourly rows into daily totals keyed by YYYY-MM-DD (UTC).
- * Returns a Map for stable insertion order.
+ * Aggregates half-hourly rows into daily totals keyed by YYYY-MM-DD.
+ * Uses the source timezone date prefix from interval_start.
  */
 export function aggregateToDaily(
   rows: OctopusConsumptionRow[]
 ): Map<string, number> {
   const daily = new Map<string, number>();
   for (const r of rows) {
-    // interval_start looks like "2024-09-01T00:00:00+01:00".
-    // Normalise to a date string in the source timezone — slice the first 10 chars.
     const dateKey = r.interval_start.slice(0, 10);
     daily.set(dateKey, (daily.get(dateKey) ?? 0) + r.consumption);
   }
