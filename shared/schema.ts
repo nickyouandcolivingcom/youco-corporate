@@ -7,6 +7,7 @@ import {
   integer,
   numeric,
   date,
+  unique,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -25,9 +26,11 @@ export const auditActionEnum = pgEnum("audit_action", [
 export const FUEL_TYPES = ["Electricity", "Gas", "Dual"] as const;
 export const ENERGY_STATUSES = ["Active", "Closed", "Disputed"] as const;
 export const INVOICE_SOURCES = ["manual", "csv_import", "api", "ocr"] as const;
+export const READING_SOURCES = ["octopus_api", "manual"] as const;
 export type FuelType = (typeof FUEL_TYPES)[number];
 export type EnergyStatus = (typeof ENERGY_STATUSES)[number];
 export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
+export type ReadingSource = (typeof READING_SOURCES)[number];
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -99,12 +102,15 @@ export const energyAccounts = pgTable("energy_accounts", {
   fuelType: text("fuel_type").notNull().default("Electricity"),
   mpan: text("mpan"),
   mprn: text("mprn"),
+  meterSerial: text("meter_serial"),
   tariffName: text("tariff_name"),
+  tariffCode: text("tariff_code"),
   unitRatePence: numeric("unit_rate_pence", { precision: 8, scale: 4 }),
   standingChargePence: numeric("standing_charge_pence", { precision: 8, scale: 4 }),
   contractEndDate: date("contract_end_date"),
   lastReadingValue: numeric("last_reading_value", { precision: 12, scale: 2 }),
   lastReadingDate: date("last_reading_date"),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
   paymentMethod: text("payment_method"),
   paymentDay: integer("payment_day"),
   status: text("status").notNull().default("Active"),
@@ -129,6 +135,26 @@ export const energyInvoices = pgTable("energy_invoices", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const energyReadings = pgTable(
+  "energy_readings",
+  {
+    id: serial("id").primaryKey(),
+    energyAccountId: integer("energy_account_id").notNull(),
+    readingDate: date("reading_date").notNull(),
+    kwh: numeric("kwh", { precision: 12, scale: 4 }).notNull(),
+    costPence: numeric("cost_pence", { precision: 12, scale: 2 }),
+    source: text("source").notNull().default("octopus_api"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    accountDateUnique: unique("energy_readings_account_date_uniq").on(
+      table.energyAccountId,
+      table.readingDate
+    ),
+  })
+);
 
 // ─── Zod schemas (insert) ─────────────────────────────────────────────────────
 
@@ -168,7 +194,9 @@ export const insertEnergyAccountSchema = createInsertSchema(energyAccounts, {
   accountNumber: z.string().nullable().optional(),
   mpan: z.string().nullable().optional(),
   mprn: z.string().nullable().optional(),
+  meterSerial: z.string().nullable().optional(),
   tariffName: z.string().nullable().optional(),
+  tariffCode: z.string().nullable().optional(),
   unitRatePence: z.string().nullable().optional(),
   standingChargePence: z.string().nullable().optional(),
   contractEndDate: z.string().nullable().optional(),
@@ -178,7 +206,7 @@ export const insertEnergyAccountSchema = createInsertSchema(energyAccounts, {
   paymentDay: z.number().int().min(1).max(31).nullable().optional(),
   disputeNotes: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
-}).omit({ id: true, createdAt: true, updatedAt: true });
+}).omit({ id: true, createdAt: true, updatedAt: true, lastSyncAt: true });
 
 export const insertEnergyInvoiceSchema = createInsertSchema(energyInvoices, {
   propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
@@ -214,6 +242,8 @@ export type InsertEnergyAccount = z.infer<typeof insertEnergyAccountSchema>;
 
 export type EnergyInvoice = typeof energyInvoices.$inferSelect;
 export type InsertEnergyInvoice = z.infer<typeof insertEnergyInvoiceSchema>;
+
+export type EnergyReading = typeof energyReadings.$inferSelect;
 
 export type AuditLog = typeof auditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

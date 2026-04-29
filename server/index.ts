@@ -7,6 +7,7 @@ import suppliersRouter from "./routes/suppliers.js";
 import portfolioRouter from "./routes/portfolio.js";
 import energyRouter from "./routes/energy.js";
 import energyInvoicesRouter from "./routes/energy-invoices.js";
+import octopusRouter from "./routes/octopus.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required");
@@ -28,6 +29,7 @@ app.use("/api/suppliers", suppliersRouter);
 app.use("/api/portfolio", portfolioRouter);
 app.use("/api/energy", energyRouter);
 app.use("/api/energy-invoices", energyInvoicesRouter);
+app.use("/api/octopus", octopusRouter);
 
 // ─── Serve frontend in production ─────────────────────────────────────────────
 if (process.env.NODE_ENV === "production") {
