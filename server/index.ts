@@ -6,6 +6,7 @@ import usersRouter from "./routes/users.js";
 import suppliersRouter from "./routes/suppliers.js";
 import portfolioRouter from "./routes/portfolio.js";
 import energyRouter from "./routes/energy.js";
+import energyInvoicesRouter from "./routes/energy-invoices.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required");
@@ -15,8 +16,8 @@ const app = express();
 
 app.set("trust proxy", 1);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: false, limit: "10mb" }));
 
 setupAuth(app);
 
@@ -26,6 +27,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/suppliers", suppliersRouter);
 app.use("/api/portfolio", portfolioRouter);
 app.use("/api/energy", energyRouter);
+app.use("/api/energy-invoices", energyInvoicesRouter);
 
 // ─── Serve frontend in production ─────────────────────────────────────────────
 if (process.env.NODE_ENV === "production") {

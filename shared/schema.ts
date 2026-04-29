@@ -24,8 +24,10 @@ export const auditActionEnum = pgEnum("audit_action", [
 
 export const FUEL_TYPES = ["Electricity", "Gas", "Dual"] as const;
 export const ENERGY_STATUSES = ["Active", "Closed", "Disputed"] as const;
+export const INVOICE_SOURCES = ["manual", "csv_import", "api", "ocr"] as const;
 export type FuelType = (typeof FUEL_TYPES)[number];
 export type EnergyStatus = (typeof ENERGY_STATUSES)[number];
+export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -112,6 +114,22 @@ export const energyAccounts = pgTable("energy_accounts", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const energyInvoices = pgTable("energy_invoices", {
+  id: serial("id").primaryKey(),
+  energyAccountId: integer("energy_account_id"),
+  propertyCode: text("property_code").notNull(),
+  supplier: text("supplier").notNull(),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  kwh: numeric("kwh", { precision: 12, scale: 2 }),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  invoiceNumber: text("invoice_number"),
+  source: text("source").notNull().default("manual"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Zod schemas (insert) ─────────────────────────────────────────────────────
 
 export const insertUserSchema = createInsertSchema(users, {
@@ -162,6 +180,19 @@ export const insertEnergyAccountSchema = createInsertSchema(energyAccounts, {
   notes: z.string().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertEnergyInvoiceSchema = createInsertSchema(energyInvoices, {
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  supplier: z.string().min(1),
+  periodStart: z.string().min(1),
+  periodEnd: z.string().min(1),
+  amount: z.string().min(1),
+  kwh: z.string().nullable().optional(),
+  invoiceNumber: z.string().nullable().optional(),
+  source: z.enum(INVOICE_SOURCES).default("manual"),
+  notes: z.string().nullable().optional(),
+  energyAccountId: z.number().int().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
   id: true,
   timestamp: true,
@@ -180,6 +211,9 @@ export type InsertPortfolioProperty = z.infer<typeof insertPortfolioPropertySche
 
 export type EnergyAccount = typeof energyAccounts.$inferSelect;
 export type InsertEnergyAccount = z.infer<typeof insertEnergyAccountSchema>;
+
+export type EnergyInvoice = typeof energyInvoices.$inferSelect;
+export type InsertEnergyInvoice = z.infer<typeof insertEnergyInvoiceSchema>;
 
 export type AuditLog = typeof auditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

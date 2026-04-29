@@ -5,6 +5,7 @@ import Layout from "@/components/Layout";
 import SuppliersContactsPage from "@/pages/suppliers/Contacts";
 import PortfolioPage from "@/pages/portfolio/Portfolio";
 import EnergyPage from "@/pages/energy/Energy";
+import EnergyInvoicesPage from "@/pages/energy/Invoices";
 import ComingSoon from "@/pages/ComingSoon";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -46,8 +47,13 @@ function AppRoutes() {
           />
         </Layout>
       </Route>
+      <Route path="/energy/invoices">
+        <Layout title="Energy Invoices">
+          <EnergyInvoicesPage />
+        </Layout>
+      </Route>
       <Route path="/energy">
-        <Layout title="Energy">
+        <Layout title="Energy Accounts">
           <EnergyPage />
         </Layout>
       </Route>

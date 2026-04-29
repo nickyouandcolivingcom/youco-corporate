@@ -7,6 +7,7 @@ import {
   Building2,
   Landmark,
   Zap,
+  FileText,
   Droplets,
   Wifi,
 } from "lucide-react";
@@ -15,70 +16,53 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
+  exact?: boolean;
 }
 
 const NAV: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "PORTFOLIO",
     items: [
-      {
-        label: "Wealth Statement",
-        href: "/portfolio",
-        icon: <Building2 size={16} />,
-      },
+      { label: "Wealth Statement", href: "/portfolio", icon: <Building2 size={16} /> },
     ],
   },
   {
     section: "SUPPLIERS",
     items: [
-      {
-        label: "Contacts",
-        href: "/suppliers/contacts",
-        icon: <ContactRound size={16} />,
-      },
+      { label: "Contacts", href: "/suppliers/contacts", icon: <ContactRound size={16} /> },
     ],
   },
   {
     section: "MORTGAGES",
     items: [
-      {
-        label: "Loans",
-        href: "/mortgages",
-        icon: <Landmark size={16} />,
-      },
+      { label: "Loans", href: "/mortgages", icon: <Landmark size={16} /> },
     ],
   },
   {
     section: "ENERGY",
     items: [
-      {
-        label: "Accounts",
-        href: "/energy",
-        icon: <Zap size={16} />,
-      },
+      { label: "Accounts", href: "/energy", icon: <Zap size={16} />, exact: true },
+      { label: "Invoices", href: "/energy/invoices", icon: <FileText size={16} /> },
     ],
   },
   {
     section: "WATER",
     items: [
-      {
-        label: "Accounts",
-        href: "/water",
-        icon: <Droplets size={16} />,
-      },
+      { label: "Accounts", href: "/water", icon: <Droplets size={16} /> },
     ],
   },
   {
     section: "BROADBAND",
     items: [
-      {
-        label: "Accounts",
-        href: "/broadband",
-        icon: <Wifi size={16} />,
-      },
+      { label: "Accounts", href: "/broadband", icon: <Wifi size={16} /> },
     ],
   },
 ];
+
+function isActive(location: string, item: NavItem): boolean {
+  if (item.exact) return location === item.href;
+  return location.startsWith(item.href);
+}
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
@@ -104,7 +88,6 @@ export default function Sidebar() {
 
   return (
     <aside className="w-56 min-h-screen bg-youco-blue flex flex-col flex-shrink-0">
-      {/* Wordmark */}
       <div className="px-4 py-5 border-b border-white/10">
         <h1 className="font-heading text-white text-lg tracking-wide leading-tight">
           You &amp; Co.
@@ -114,7 +97,6 @@ export default function Sidebar() {
         </p>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
         {NAV.map(({ section, items }) => (
           <div key={section}>
@@ -122,17 +104,12 @@ export default function Sidebar() {
               {section}
             </p>
             {items.map((item) => (
-              <NavLink
-                key={item.href}
-                item={item}
-                active={location.startsWith(item.href)}
-              />
+              <NavLink key={item.href} item={item} active={isActive(location, item)} />
             ))}
           </div>
         ))}
       </nav>
 
-      {/* User footer */}
       <div className="px-3 py-3 border-t border-white/10">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
