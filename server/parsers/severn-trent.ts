@@ -36,8 +36,12 @@ const MONTHS_SHORT: Record<string, string> = {
 };
 
 function parseDateLoose(s: string): string | null {
-  const t = s.trim();
-  // "01 April 2025" or "1 Apr 2026"
+  // Strip ordinal suffixes ("3rd" → "3"), collapse whitespace.
+  const t = s
+    .trim()
+    .replace(/(\d+)(st|nd|rd|th)/i, "$1")
+    .replace(/\s+/g, " ");
+  // "01 April 2025" or "1 Apr 2026" or "12 June 2025"
   const m = t.match(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/);
   if (!m) return null;
   const monthRaw = m[2].toLowerCase();
@@ -119,29 +123,46 @@ export function parseSevernTrentBill(
     };
   }
 
-  // 2. Billing period — "1 Apr 2026 - 31 Mar 2027" or "01April 2025-31March2026"
-  // Allow both space-stripped and spaced.
-  const periodMatch =
-    stripped.match(
-      /(\d{1,2}\s+\w+\s+\d{4})\s*[-–]\s*(\d{1,2}\s+\w+\s+\d{4})/
-    ) ??
-    text.match(
-      /(\d{1,2}[A-Za-z]+\d{4})-(\d{1,2}[A-Za-z]+\d{4})/
-    );
+  // 2. Billing period.
+  // Three formats observed in the wild:
+  //   (a) "1 Apr 2026 - 31 Mar 2027"                — annual rateable bills
+  //   (b) "01April 2025-31March2026"                — old-format space-stripped
+  //   (c) "3rd September 2024 - 27th August 2025"   — metered bills, with ordinals,
+  //                                                    full month names, possible
+  //                                                    newlines between month and year
+  //
+  // For (c) the PDF lists TWO date pairs ("Previous bill" then "This bill"); we
+  // want the most recent (last). Strategy: find ALL date pairs with the
+  // ordinal-tolerant pattern in the whitespace-collapsed text, take the last.
+  const PERIOD_PAIR_RE =
+    /(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})\s*[-–]\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})/gi;
+  const allPairs = [...stripped.matchAll(PERIOD_PAIR_RE)];
 
   let periodStart: string | null = null;
   let periodEnd: string | null = null;
-  if (periodMatch) {
-    // Need to space-out the unspaced version if it matched the second pattern
-    const stretch = (s: string) =>
-      s.replace(/(\d+)([A-Za-z]+)(\d+)/, "$1 $2 $3");
-    periodStart = parseDateLoose(stretch(periodMatch[1]));
-    periodEnd = parseDateLoose(stretch(periodMatch[2]));
+
+  if (allPairs.length > 0) {
+    // Last pair = "this bill" for metered format, or the only pair for annual.
+    const last = allPairs[allPairs.length - 1];
+    periodStart = parseDateLoose(last[1]);
+    periodEnd = parseDateLoose(last[2]);
   }
+  if (!periodStart || !periodEnd) {
+    // Fallback to space-stripped legacy format.
+    const m = text.match(/(\d{1,2}[A-Za-z]+\d{4})-(\d{1,2}[A-Za-z]+\d{4})/);
+    if (m) {
+      const stretch = (s: string) =>
+        s.replace(/(\d+)([A-Za-z]+)(\d+)/, "$1 $2 $3");
+      periodStart = parseDateLoose(stretch(m[1]));
+      periodEnd = parseDateLoose(stretch(m[2]));
+    }
+  }
+
   if (!periodStart || !periodEnd) {
     return {
       ok: false,
       accountNumber,
+      supplyAddress,
       error: "Could not parse billing period from PDF",
     };
   }
