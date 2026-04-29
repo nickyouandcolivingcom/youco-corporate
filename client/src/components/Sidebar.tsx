@@ -53,7 +53,8 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
   {
     section: "WATER",
     items: [
-      { label: "Accounts", href: "/water", icon: <Droplets size={16} /> },
+      { label: "Accounts", href: "/water", icon: <Droplets size={16} />, exact: true },
+      { label: "Invoices", href: "/water/invoices", icon: <FileText size={16} /> },
     ],
   },
   {

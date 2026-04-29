@@ -170,6 +170,39 @@ export const energyReadings = pgTable(
   })
 );
 
+export const waterAccounts = pgTable("water_accounts", {
+  id: serial("id").primaryKey(),
+  supplier: text("supplier").notNull(),
+  propertyCode: text("property_code").notNull(),
+  accountNumber: text("account_number"),
+  supplyAddress: text("supply_address"),
+  rateableValue: numeric("rateable_value", { precision: 10, scale: 2 }),
+  billingFrequency: text("billing_frequency").notNull().default("Annual"),
+  status: text("status").notNull().default("Active"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const waterInvoices = pgTable("water_invoices", {
+  id: serial("id").primaryKey(),
+  waterAccountId: integer("water_account_id"),
+  propertyCode: text("property_code").notNull(),
+  supplier: text("supplier").notNull(),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  freshWaterAmount: numeric("fresh_water_amount", { precision: 12, scale: 2 }),
+  wastewaterAmount: numeric("wastewater_amount", { precision: 12, scale: 2 }),
+  standingChargeAmount: numeric("standing_charge_amount", { precision: 12, scale: 2 }),
+  invoiceNumber: text("invoice_number"),
+  issueDate: date("issue_date"),
+  source: text("source").notNull().default("manual"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const docs = pgTable("docs", {
   id: serial("id").primaryKey(),
   slug: text("slug").notNull().unique(),
@@ -257,6 +290,33 @@ export const insertEnergyInvoiceSchema = createInsertSchema(energyInvoices, {
   energyAccountId: z.number().int().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertWaterAccountSchema = createInsertSchema(waterAccounts, {
+  supplier: z.string().min(1),
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  accountNumber: z.string().nullable().optional(),
+  supplyAddress: z.string().nullable().optional(),
+  rateableValue: z.string().nullable().optional(),
+  billingFrequency: z.string().default("Annual"),
+  status: z.enum(ENERGY_STATUSES).default("Active"),
+  notes: z.string().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const insertWaterInvoiceSchema = createInsertSchema(waterInvoices, {
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  supplier: z.string().min(1),
+  periodStart: z.string().min(1),
+  periodEnd: z.string().min(1),
+  amount: z.string().min(1),
+  freshWaterAmount: z.string().nullable().optional(),
+  wastewaterAmount: z.string().nullable().optional(),
+  standingChargeAmount: z.string().nullable().optional(),
+  invoiceNumber: z.string().nullable().optional(),
+  issueDate: z.string().nullable().optional(),
+  source: z.enum(INVOICE_SOURCES).default("manual"),
+  notes: z.string().nullable().optional(),
+  waterAccountId: z.number().int().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertDocSchema = createInsertSchema(docs, {
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, "slug must be lowercase, hyphens only"),
   title: z.string().min(1),
@@ -289,6 +349,12 @@ export type EnergyInvoice = typeof energyInvoices.$inferSelect;
 export type InsertEnergyInvoice = z.infer<typeof insertEnergyInvoiceSchema>;
 
 export type EnergyReading = typeof energyReadings.$inferSelect;
+
+export type WaterAccount = typeof waterAccounts.$inferSelect;
+export type InsertWaterAccount = z.infer<typeof insertWaterAccountSchema>;
+
+export type WaterInvoice = typeof waterInvoices.$inferSelect;
+export type InsertWaterInvoice = z.infer<typeof insertWaterInvoiceSchema>;
 
 export type Doc = typeof docs.$inferSelect;
 export type InsertDoc = z.infer<typeof insertDocSchema>;

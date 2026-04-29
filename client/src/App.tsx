@@ -8,6 +8,8 @@ import EnergyPage from "@/pages/energy/Energy";
 import EnergyInvoicesPage from "@/pages/energy/Invoices";
 import EnergySyncPage from "@/pages/energy/Sync";
 import EnergyAnalyticsPage from "@/pages/energy/Analytics";
+import WaterAccountsPage from "@/pages/water/Accounts";
+import WaterInvoicesPage from "@/pages/water/Invoices";
 import DocsListPage from "@/pages/docs/List";
 import DocViewPage from "@/pages/docs/View";
 import ComingSoon from "@/pages/ComingSoon";
@@ -71,12 +73,14 @@ function AppRoutes() {
           <EnergyPage />
         </Layout>
       </Route>
+      <Route path="/water/invoices">
+        <Layout title="Water Invoices">
+          <WaterInvoicesPage />
+        </Layout>
+      </Route>
       <Route path="/water">
-        <Layout title="Water">
-          <ComingSoon
-            title="Water"
-            description="Severn Trent, Dyr Cymru. Supply ref, meter readings."
-          />
+        <Layout title="Water Accounts">
+          <WaterAccountsPage />
         </Layout>
       </Route>
       <Route path="/broadband">
