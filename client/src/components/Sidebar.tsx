@@ -9,6 +9,7 @@ import {
   Zap,
   FileText,
   RefreshCw,
+  TrendingUp,
   Droplets,
   Wifi,
 } from "lucide-react";
@@ -44,6 +45,7 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
     items: [
       { label: "Accounts", href: "/energy", icon: <Zap size={16} />, exact: true },
       { label: "Invoices", href: "/energy/invoices", icon: <FileText size={16} /> },
+      { label: "Analytics", href: "/energy/analytics", icon: <TrendingUp size={16} /> },
       { label: "Sync (Octopus)", href: "/energy/sync", icon: <RefreshCw size={16} /> },
     ],
   },

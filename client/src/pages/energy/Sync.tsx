@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Download, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Search, Download, AlertCircle, CheckCircle2, Upload } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/hooks/useAuth";
+import type { EnergyAccount } from "@shared/schema";
 
 interface DiscoverResult {
   total: number;
@@ -77,6 +78,50 @@ function useSync() {
         throw new Error(body.error ?? "Sync failed");
       }
       return res.json() as Promise<SyncResult>;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/energy"] }),
+  });
+}
+
+interface CsvImportResult {
+  accountId: number;
+  propertyCode: string;
+  fuelType: "Electricity" | "Gas";
+  halfHourlyRowsParsed: number;
+  halfHourlyRowsSkipped: number;
+  daysWritten: number;
+  totalKwh: number;
+}
+
+function useEnergyAccounts() {
+  return useQuery<EnergyAccount[]>({
+    queryKey: ["/api/energy"],
+    queryFn: async () => {
+      const res = await fetch("/api/energy", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load energy accounts");
+      return res.json();
+    },
+  });
+}
+
+function useImportCsv() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      accountId: number;
+      fuelType: "Electricity" | "Gas";
+      csvText: string;
+    }) => {
+      const res = await apiRequest(
+        "POST",
+        "/api/octopus/import-consumption-csv",
+        payload
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Import failed");
+      }
+      return res.json() as Promise<CsvImportResult>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/energy"] }),
   });
@@ -337,11 +382,144 @@ export default function EnergySyncPage() {
         </div>
       </section>
 
+      {/* ─── Step 3: Import consumption CSV (fallback) ──────────────────────── */}
+      <CsvImportSection />
+
       <p className="text-xs text-gray-500">
         Auth: HTTP Basic against api.octopus.energy. The API key is read from
         OCTOPUS_API_KEY (set on Render). EON readings are not available via API
         and remain invoice-only.
       </p>
     </div>
+  );
+}
+
+function CsvImportSection() {
+  const { data: accounts = [] } = useEnergyAccounts();
+  const importMut = useImportCsv();
+  const csvRef = useRef<HTMLInputElement>(null);
+
+  const octopusAccounts = accounts.filter((a) => a.supplier === "Octopus");
+  const [accountId, setAccountId] = useState<number | "">(
+    octopusAccounts[0]?.id ?? ""
+  );
+  const [fuelType, setFuelType] = useState<"Electricity" | "Gas">("Electricity");
+
+  // Default to first Octopus account once accounts load.
+  if (accountId === "" && octopusAccounts.length > 0) {
+    setAccountId(octopusAccounts[0].id);
+  }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || accountId === "") return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const text = ev.target?.result as string;
+      await importMut.mutateAsync({
+        accountId: accountId as number,
+        fuelType,
+        csvText: text,
+      });
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  const selectedAcc = octopusAccounts.find((a) => a.id === accountId);
+
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg p-5">
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
+          <Upload size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-gray-900">
+            Step 3 — Import consumption CSV (fallback)
+          </h3>
+          <p className="text-sm text-gray-600 mt-0.5">
+            For accounts where Step 2 returns 0 days (e.g. 16RC, 10KG) but
+            Octopus's dashboard does have data: download the half-hourly CSV
+            from the Octopus dashboard ("Get your energy geek on" → choose data
+            + dates → Download), then upload it here. Same daily aggregation
+            and upsert as the API path. Use one CSV per (account, fuel).
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Account
+              </label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(Number(e.target.value))}
+                className="border border-gray-300 rounded px-3 py-1.5 text-sm min-w-[260px]"
+              >
+                {octopusAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.accountNumber} — {a.propertyCode}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Fuel
+              </label>
+              <select
+                value={fuelType}
+                onChange={(e) =>
+                  setFuelType(e.target.value as "Electricity" | "Gas")
+                }
+                className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+              >
+                <option>Electricity</option>
+                <option>Gas</option>
+              </select>
+            </div>
+            <button
+              disabled={accountId === "" || importMut.isPending}
+              onClick={() => csvRef.current?.click()}
+              className="px-4 py-1.5 bg-emerald-600 text-white text-sm rounded hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <Upload size={14} />
+              {importMut.isPending ? "Importing…" : "Choose CSV"}
+            </button>
+            <input
+              ref={csvRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleFile}
+            />
+          </div>
+          {importMut.error && (
+            <p className="mt-2 text-sm text-red-600">{importMut.error.message}</p>
+          )}
+          {importMut.data && (
+            <div className="mt-3 text-sm">
+              <p className="text-gray-700">
+                Imported <strong>{importMut.data.daysWritten}</strong> days for{" "}
+                <strong>{importMut.data.propertyCode}</strong> ({importMut.data.fuelType})
+                — total <strong>{importMut.data.totalKwh.toLocaleString("en-GB")} kWh</strong>{" "}
+                from {importMut.data.halfHourlyRowsParsed.toLocaleString("en-GB")} half-hour rows.
+                {importMut.data.halfHourlyRowsSkipped > 0 && (
+                  <span className="text-gray-500">
+                    {" "}
+                    ({importMut.data.halfHourlyRowsSkipped} rows skipped — malformed.)
+                  </span>
+                )}
+              </p>
+              {selectedAcc && (
+                <p className="text-xs text-gray-500 mt-1">
+                  These readings are now visible on /energy/analytics for{" "}
+                  {selectedAcc.propertyCode}.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

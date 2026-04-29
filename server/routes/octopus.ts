@@ -321,6 +321,174 @@ router.post("/sync", requireContributor, async (req, res) => {
   });
 });
 
+// ─── POST /api/octopus/import-consumption-csv ─────────────────────────────────
+//
+// Fallback for accounts where /consumption/ API returns empty even though
+// HH data exists in Octopus's system (some accounts behave this way for
+// reasons that aren't always clear — possibly old SMETS1 meters, separate
+// auth, or account-level quirks).
+//
+// User downloads the half-hourly CSV from the Octopus dashboard ("Energy
+// geek on" section) and uploads it here. Same shape as the API would have
+// returned: half-hourly rows that we aggregate to daily and upsert into
+// energy_readings.
+
+const importCsvSchema = z.object({
+  accountId: z.number().int(),
+  fuelType: z.enum(["Electricity", "Gas"]),
+  csvText: z.string().min(1),
+});
+
+router.post("/import-consumption-csv", requireContributor, async (req, res) => {
+  const parsed = importCsvSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { accountId, fuelType, csvText } = parsed.data;
+
+  const [acc] = await db
+    .select()
+    .from(energyAccounts)
+    .where(eq(energyAccounts.id, accountId));
+  if (!acc) return res.status(404).json({ error: "Account not found" });
+
+  // Parse Octopus consumption CSV. Header:
+  //   Consumption (kwh), Estimated Cost Inc. Tax (p), Standing Charge Inc. Tax (p), Start, End
+  // Half-hourly rows. Aggregate by date prefix of Start (YYYY-MM-DD).
+  const lines = csvText.split(/\r?\n/);
+  const daily = new Map<string, { kwh: number; costPence: number }>();
+  let parsed_rows = 0;
+  let skipped_rows = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = line.split(",").map((c) => c.trim());
+    if (cols.length < 4) {
+      skipped_rows += 1;
+      continue;
+    }
+    const consumption = Number(cols[0]);
+    const costPence = Number(cols[1]);
+    const start = cols[3];
+    if (Number.isNaN(consumption) || !start) {
+      skipped_rows += 1;
+      continue;
+    }
+    const dateKey = start.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      skipped_rows += 1;
+      continue;
+    }
+    const cur = daily.get(dateKey) ?? { kwh: 0, costPence: 0 };
+    cur.kwh += consumption;
+    cur.costPence += Number.isNaN(costPence) ? 0 : costPence;
+    daily.set(dateKey, cur);
+    parsed_rows += 1;
+  }
+
+  let written = 0;
+  let totalKwh = 0;
+  for (const [readingDate, agg] of daily) {
+    const kwhStr = agg.kwh.toFixed(4);
+    const costStr = agg.costPence.toFixed(2);
+    await db
+      .insert(energyReadings)
+      .values({
+        energyAccountId: accountId,
+        fuelType,
+        readingDate,
+        kwh: kwhStr,
+        costPence: costStr,
+        source: "octopus_api",
+      })
+      .onConflictDoUpdate({
+        target: [
+          energyReadings.energyAccountId,
+          energyReadings.fuelType,
+          energyReadings.readingDate,
+        ],
+        set: {
+          kwh: kwhStr,
+          costPence: costStr,
+          source: "octopus_api",
+          updatedAt: sql`now()`,
+        },
+      });
+    written += 1;
+    totalKwh += agg.kwh;
+  }
+
+  await db
+    .update(energyAccounts)
+    .set({ lastSyncAt: sql`now()` })
+    .where(eq(energyAccounts.id, accountId));
+
+  await logAudit({
+    userId: req.user!.id,
+    userName: req.user!.username,
+    action: "created",
+    entity: "energy_readings",
+    entityId: accountId,
+    fieldChanged: null,
+    oldValue: null,
+    newValue: `CSV import (${fuelType}): ${written} days from ${parsed_rows} half-hour rows`,
+  });
+
+  res.json({
+    accountId,
+    propertyCode: acc.propertyCode,
+    fuelType,
+    halfHourlyRowsParsed: parsed_rows,
+    halfHourlyRowsSkipped: skipped_rows,
+    daysWritten: written,
+    totalKwh: Number(totalKwh.toFixed(4)),
+  });
+});
+
+// ─── GET /api/octopus/analytics ───────────────────────────────────────────────
+//
+// Returns daily kWh per (property_code, fuel_type) within a date range.
+// Frontend aggregates further (weekly/monthly) based on range length.
+
+router.get("/analytics", requireContributor, async (req, res) => {
+  const from = (req.query.from as string | undefined)?.trim();
+  const to = (req.query.to as string | undefined)?.trim();
+  const fuelType = (req.query.fuelType as string | undefined)?.trim();
+
+  if (!from || !to) {
+    return res.status(400).json({ error: "from and to query params required" });
+  }
+
+  const conditions = [
+    gte(energyReadings.readingDate, from),
+    lte(energyReadings.readingDate, to),
+  ];
+  if (fuelType) conditions.push(eq(energyReadings.fuelType, fuelType));
+
+  const rows = await db
+    .select({
+      readingDate: energyReadings.readingDate,
+      fuelType: energyReadings.fuelType,
+      kwh: energyReadings.kwh,
+      energyAccountId: energyReadings.energyAccountId,
+      propertyCode: energyAccounts.propertyCode,
+    })
+    .from(energyReadings)
+    .innerJoin(
+      energyAccounts,
+      eq(energyAccounts.id, energyReadings.energyAccountId)
+    )
+    .where(and(...conditions))
+    .orderBy(energyReadings.readingDate);
+
+  res.json({
+    period: { from, to, fuelType: fuelType ?? null },
+    rowCount: rows.length,
+    rows,
+  });
+});
+
 // ─── GET /api/octopus/readings ────────────────────────────────────────────────
 
 router.get("/readings", requireContributor, async (req, res) => {
