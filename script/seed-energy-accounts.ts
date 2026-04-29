@@ -43,11 +43,11 @@ const SEEDS: Seed[] = [
   { supplier: "Octopus", propertyCode: "10KG",  accountNumber: "A-2474F4DC", fuelType: "Electricity", status: "Active" },
   { supplier: "Octopus", propertyCode: "32LFR", accountNumber: "A-FF2EBA4D", fuelType: "Electricity", status: "Active" },
 
-  // ─── EON Next (live July 2025; tariff "Next Fixed 12m v53" across all four) ─
-  { supplier: "EON", propertyCode: "27BLA", accountNumber: "A-BEBE32A9", fuelType: "Electricity", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53" },
-  { supplier: "EON", propertyCode: "27BLB", accountNumber: "A-B1661B4C", fuelType: "Electricity", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53" },
-  { supplier: "EON", propertyCode: "27BLC", accountNumber: "A-D17B776F", fuelType: "Electricity", status: "Active", notes: "Tenant-paid — visible in Nick's EON dashboard but no liability; exclude from cost reporting" },
-  { supplier: "EON", propertyCode: "27BLD", accountNumber: "A-F8569CBB", fuelType: "Electricity", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53" },
+  // ─── EON Next (live July 2025; tariff "Next Fixed 12m v53"; dual-fuel) ──────
+  { supplier: "EON", propertyCode: "27BLA", accountNumber: "A-BEBE32A9", fuelType: "Dual", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53; dual fuel (electricity + gas)" },
+  { supplier: "EON", propertyCode: "27BLB", accountNumber: "A-B1661B4C", fuelType: "Dual", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53; dual fuel" },
+  { supplier: "EON", propertyCode: "27BLC", accountNumber: "A-D17B776F", fuelType: "Dual", status: "Active", notes: "Tenant-paid — visible in Nick's EON dashboard but no liability; exclude from cost reporting" },
+  { supplier: "EON", propertyCode: "27BLD", accountNumber: "A-F8569CBB", fuelType: "Dual", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53; dual fuel" },
 ];
 
 async function main() {

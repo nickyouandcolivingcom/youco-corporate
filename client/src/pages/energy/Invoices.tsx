@@ -708,6 +708,7 @@ export default function EnergyInvoicesPage() {
                 onChange={handleCsvFile}
               />
               <BulkImportButton />
+              <PdfImportButton />
               <button
                 onClick={() => {
                   setAddForm(EMPTY_FORM);
@@ -1250,6 +1251,285 @@ function BulkImportButton() {
                   {importMut.isPending
                     ? "Importing…"
                     : `Import ${parsedRows.length} rows`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── PDF Bulk Import (per-supplier parser) ───────────────────────────────────
+
+interface PdfImportFileResult {
+  file: string;
+  supplier?: string;
+  accountNumber?: string;
+  propertyCode?: string;
+  status: "ok" | "error" | "no_parser";
+  row?: BulkRow;
+  error?: string;
+}
+
+interface PdfImportResponse {
+  received: number;
+  parsed: number;
+  failed: number;
+  results: PdfImportFileResult[];
+  rows: BulkRow[];
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const comma = dataUrl.indexOf(",");
+      resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function usePdfImport() {
+  return useMutation({
+    mutationFn: async (files: File[]) => {
+      const payload = await Promise.all(
+        files.map(async (f) => ({ name: f.name, base64: await fileToBase64(f) }))
+      );
+      const res = await apiRequest("POST", "/api/energy-pdf-import", {
+        files: payload,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "PDF import failed");
+      }
+      return res.json() as Promise<PdfImportResponse>;
+    },
+  });
+}
+
+function PdfImportButton() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const parseMut = usePdfImport();
+  const importMut = useBulkImport();
+  const [imported, setImported] = useState(false);
+
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setImported(false);
+    parseMut.mutate(files);
+    setOpen(true);
+    e.target.value = "";
+  }
+
+  async function handleImport() {
+    if (!parseMut.data) return;
+    await importMut.mutateAsync(parseMut.data.rows);
+    setImported(true);
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="flex items-center gap-1.5 px-3 py-1.5 border border-purple-300 text-purple-700 text-sm rounded hover:bg-purple-50"
+        title="Bulk import multiple PDF invoices (EON supported; other suppliers added on request)"
+      >
+        <Upload size={14} />
+        Bulk Import (PDF)
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        multiple
+        className="hidden"
+        onChange={handleFiles}
+      />
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              setOpen(false);
+              parseMut.reset();
+              importMut.reset();
+              setImported(false);
+            }}
+          />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h2 className="font-semibold text-gray-900">PDF Bulk Import — review</h2>
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  parseMut.reset();
+                  importMut.reset();
+                  setImported(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3 text-sm">
+              {parseMut.isPending && (
+                <p className="text-gray-700">Parsing PDFs…</p>
+              )}
+              {parseMut.error && (
+                <p className="text-red-600">{parseMut.error.message}</p>
+              )}
+              {parseMut.data && (
+                <>
+                  <p className="text-gray-700">
+                    Parsed <strong>{parseMut.data.parsed}</strong> /{" "}
+                    {parseMut.data.received} PDFs.
+                    {parseMut.data.failed > 0 && (
+                      <span className="text-red-600">
+                        {" "}
+                        {parseMut.data.failed} failed (see below).
+                      </span>
+                    )}
+                  </p>
+                  <table className="w-full text-xs border border-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-2 py-1">File</th>
+                        <th className="text-left px-2 py-1">Supplier</th>
+                        <th className="text-left px-2 py-1">Property</th>
+                        <th className="text-left px-2 py-1">Period</th>
+                        <th className="text-right px-2 py-1">Amount</th>
+                        <th className="text-right px-2 py-1">E kWh</th>
+                        <th className="text-right px-2 py-1">G kWh</th>
+                        <th className="text-left px-2 py-1">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {parseMut.data.results.map((r, i) => (
+                        <tr key={i}>
+                          <td className="px-2 py-1 font-mono truncate max-w-[180px]">
+                            {r.file}
+                          </td>
+                          <td className="px-2 py-1">{r.supplier ?? "—"}</td>
+                          <td className="px-2 py-1 font-mono">
+                            {r.propertyCode ?? "—"}
+                          </td>
+                          <td className="px-2 py-1">
+                            {r.row
+                              ? `${r.row.periodStart} → ${r.row.periodEnd}`
+                              : "—"}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {r.row ? `£${r.row.amount}` : "—"}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {r.row?.electricityKwh ?? "—"}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {r.row?.gasKwh ?? "—"}
+                          </td>
+                          <td className="px-2 py-1">
+                            {r.status === "ok" ? (
+                              <span className="text-emerald-600">OK</span>
+                            ) : (
+                              <span
+                                className="text-red-600"
+                                title={r.error}
+                              >
+                                {r.status === "no_parser" ? "no parser" : "error"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {parseMut.data.results.some((r) => r.status !== "ok") && (
+                    <details className="border border-red-200 rounded p-3 bg-red-50">
+                      <summary className="cursor-pointer text-xs text-red-700">
+                        Errors ({parseMut.data.results.filter((r) => r.status !== "ok").length})
+                      </summary>
+                      <ul className="mt-2 text-xs text-red-700 space-y-0.5">
+                        {parseMut.data.results
+                          .filter((r) => r.status !== "ok")
+                          .map((r, i) => (
+                            <li key={i}>
+                              <code>{r.file}</code>: {r.error}
+                            </li>
+                          ))}
+                      </ul>
+                    </details>
+                  )}
+                </>
+              )}
+
+              {importMut.error && (
+                <p className="text-red-600">{importMut.error.message}</p>
+              )}
+
+              {importMut.data && (
+                <div className="border border-gray-200 rounded p-3 space-y-2 bg-gray-50">
+                  <p className="text-gray-700">
+                    Imported <strong>{importMut.data.inserted}</strong> /{" "}
+                    {importMut.data.received} rows into the database.
+                    {importMut.data.skippedDuplicates > 0 && (
+                      <span className="text-amber-700">
+                        {" "}
+                        {importMut.data.skippedDuplicates} duplicates skipped.
+                      </span>
+                    )}
+                  </p>
+                  {importMut.data.gaps.length > 0 && (
+                    <details open>
+                      <summary className="cursor-pointer text-xs text-amber-700 font-semibold">
+                        Missing months ({importMut.data.gaps.length})
+                      </summary>
+                      <ul className="mt-1 text-xs text-gray-700 max-h-40 overflow-y-auto space-y-0.5">
+                        {importMut.data.gaps.map((g, i) => (
+                          <li key={i}>
+                            <code>{g.propertyCode}</code> / {g.supplier} —{" "}
+                            <strong>{g.missingMonth}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {importMut.data.gaps.length === 0 && (
+                    <p className="text-xs text-emerald-700">
+                      No gaps in monthly coverage.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  parseMut.reset();
+                  importMut.reset();
+                  setImported(false);
+                }}
+                className="px-4 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+              >
+                {imported ? "Close" : "Cancel"}
+              </button>
+              {parseMut.data && parseMut.data.rows.length > 0 && !imported && (
+                <button
+                  disabled={importMut.isPending}
+                  onClick={handleImport}
+                  className="px-4 py-1.5 text-sm bg-purple-600 text-white rounded hover:opacity-90 disabled:opacity-50"
+                >
+                  {importMut.isPending
+                    ? "Importing…"
+                    : `Import ${parseMut.data.rows.length} rows`}
                 </button>
               )}
             </div>

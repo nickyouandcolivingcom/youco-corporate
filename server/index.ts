@@ -9,6 +9,7 @@ import energyRouter from "./routes/energy.js";
 import energyInvoicesRouter from "./routes/energy-invoices.js";
 import octopusRouter from "./routes/octopus.js";
 import docsRouter from "./routes/docs.js";
+import energyPdfImportRouter from "./routes/energy-pdf-import.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required");
@@ -18,8 +19,8 @@ const app = express();
 
 app.set("trust proxy", 1);
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: false, limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: false, limit: "50mb" }));
 
 setupAuth(app);
 
@@ -30,6 +31,7 @@ app.use("/api/suppliers", suppliersRouter);
 app.use("/api/portfolio", portfolioRouter);
 app.use("/api/energy", energyRouter);
 app.use("/api/energy-invoices", energyInvoicesRouter);
+app.use("/api/energy-pdf-import", energyPdfImportRouter);
 app.use("/api/octopus", octopusRouter);
 app.use("/api/docs", docsRouter);
 
