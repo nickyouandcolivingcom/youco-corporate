@@ -1,13 +1,19 @@
 /**
- * Seeds the 10 Octopus + 3 EON electricity supply accounts. Octopus account
- * numbers were provided by Nick on 2026-04-29; EON went live July 2025 for
- * 27BLA/B/D (27BLC is tenant-paid, intentionally absent).
+ * Seeds the 14 known electricity supply accounts (10 Octopus + 4 EON).
+ *
+ * Octopus: 8 historical (Jan 2023+) plus 26BL and 27BL freehold/communal
+ *   supplies. 27BLC was on Octopus during the development period and continues
+ *   on Octopus until tenancy was established.
+ *
+ * EON: went live July 2025 for the 27 Brook Lane flats. 27BLC is in Nick's
+ *   EON dashboard but tenant-paid; included for visibility but flagged in
+ *   notes so reporting/alerts can exclude it.
  *
  * Usage:
  *   DATABASE_URL=<url> tsx script/seed-energy-accounts.ts
  *
- * Safe to re-run: keys on (supplier, account_number) for Octopus, or
- * (supplier, property_code) for EON which has no account number yet.
+ * Safe to re-run: matches by (supplier, account_number) when present;
+ * otherwise (supplier, property_code).
  */
 
 import { Pool } from "pg";
@@ -37,10 +43,11 @@ const SEEDS: Seed[] = [
   { supplier: "Octopus", propertyCode: "10KG",  accountNumber: "A-2474F4DC", fuelType: "Electricity", status: "Active" },
   { supplier: "Octopus", propertyCode: "32LFR", accountNumber: "A-FF2EBA4D", fuelType: "Electricity", status: "Active" },
 
-  // ─── EON (live July 2025 — invoice-only, no public consumption API) ─────────
-  { supplier: "EON", propertyCode: "27BLA", accountNumber: null, fuelType: "Electricity", status: "Active", notes: "Live since July 2025" },
-  { supplier: "EON", propertyCode: "27BLB", accountNumber: null, fuelType: "Electricity", status: "Active", notes: "Live since July 2025" },
-  { supplier: "EON", propertyCode: "27BLD", accountNumber: null, fuelType: "Electricity", status: "Active", notes: "Live since July 2025" },
+  // ─── EON Next (live July 2025; tariff "Next Fixed 12m v53" across all four) ─
+  { supplier: "EON", propertyCode: "27BLA", accountNumber: "A-BEBE32A9", fuelType: "Electricity", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53" },
+  { supplier: "EON", propertyCode: "27BLB", accountNumber: "A-B1661B4C", fuelType: "Electricity", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53" },
+  { supplier: "EON", propertyCode: "27BLC", accountNumber: "A-D17B776F", fuelType: "Electricity", status: "Active", notes: "Tenant-paid — visible in Nick's EON dashboard but no liability; exclude from cost reporting" },
+  { supplier: "EON", propertyCode: "27BLD", accountNumber: "A-F8569CBB", fuelType: "Electricity", status: "Active", notes: "Live July 2025; tariff Next Fixed 12m v53" },
 ];
 
 async function main() {
@@ -54,7 +61,6 @@ async function main() {
   let updated = 0;
 
   for (const s of SEEDS) {
-    // Match by (supplier, account_number) when present, otherwise (supplier, property_code)
     const where = s.accountNumber
       ? and(
           eq(schema.energyAccounts.supplier, s.supplier),
