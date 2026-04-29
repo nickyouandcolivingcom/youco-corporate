@@ -170,6 +170,18 @@ export const energyReadings = pgTable(
   })
 );
 
+export const docs = pgTable("docs", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  category: text("category").notNull().default("General"),
+  sortOrder: integer("sort_order").notNull().default(100),
+  body: text("body").notNull().default(""),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Zod schemas (insert) ─────────────────────────────────────────────────────
 
 export const insertUserSchema = createInsertSchema(users, {
@@ -245,6 +257,15 @@ export const insertEnergyInvoiceSchema = createInsertSchema(energyInvoices, {
   energyAccountId: z.number().int().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertDocSchema = createInsertSchema(docs, {
+  slug: z.string().min(1).regex(/^[a-z0-9-]+$/, "slug must be lowercase, hyphens only"),
+  title: z.string().min(1),
+  category: z.string().min(1).default("General"),
+  sortOrder: z.number().int().default(100),
+  body: z.string().default(""),
+  updatedBy: z.string().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
   id: true,
   timestamp: true,
@@ -268,6 +289,9 @@ export type EnergyInvoice = typeof energyInvoices.$inferSelect;
 export type InsertEnergyInvoice = z.infer<typeof insertEnergyInvoiceSchema>;
 
 export type EnergyReading = typeof energyReadings.$inferSelect;
+
+export type Doc = typeof docs.$inferSelect;
+export type InsertDoc = z.infer<typeof insertDocSchema>;
 
 export type AuditLog = typeof auditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

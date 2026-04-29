@@ -698,7 +698,7 @@ export default function EnergyInvoicesPage() {
                 title="Import wide-format energy expense CSV (the existing Google Sheet)"
               >
                 <Upload size={14} />
-                Import CSV
+                Import CSV (wide)
               </button>
               <input
                 ref={csvRef}
@@ -707,6 +707,7 @@ export default function EnergyInvoicesPage() {
                 className="hidden"
                 onChange={handleCsvFile}
               />
+              <BulkImportButton />
               <button
                 onClick={() => {
                   setAddForm(EMPTY_FORM);
@@ -943,5 +944,318 @@ export default function EnergyInvoicesPage() {
         </Modal>
       )}
     </div>
+  );
+}
+
+// ─── Bulk import (long-format) ────────────────────────────────────────────────
+
+interface BulkRow {
+  propertyCode: string;
+  supplier: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: string;
+  electricityKwh?: string | null;
+  gasKwh?: string | null;
+  electricityAmount?: string | null;
+  gasAmount?: string | null;
+  vatAmount?: string | null;
+  invoiceNumber?: string | null;
+  notes?: string | null;
+}
+
+interface BulkImportResult {
+  received: number;
+  inserted: number;
+  skippedDuplicates: number;
+  duplicates: Array<{ row: number; key: string }>;
+  gaps: Array<{ propertyCode: string; supplier: string; missingMonth: string }>;
+}
+
+function bulkNormaliseHeader(h: string): string {
+  return h.trim().replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().replace(/\s+/g, "_");
+}
+
+function bulkNum(v: string): string | null {
+  const cleaned = v.replace(/[£,\s]/g, "").trim();
+  if (!cleaned) return null;
+  return cleaned;
+}
+
+function parseLongFormatCsv(text: string): {
+  rows: BulkRow[];
+  errors: Array<{ row: number; message: string }>;
+} {
+  const result = Papa.parse<string[]>(text, { skipEmptyLines: true });
+  const data = result.data;
+  if (data.length < 2) return { rows: [], errors: [] };
+
+  const headers = data[0].map(bulkNormaliseHeader);
+  const idx = (keys: string[]) => {
+    for (const k of keys) {
+      const i = headers.indexOf(k);
+      if (i !== -1) return i;
+    }
+    return -1;
+  };
+
+  const col = {
+    propertyCode: idx(["property_code", "property", "code"]),
+    supplier: idx(["supplier", "name"]),
+    periodStart: idx(["period_start", "from", "start"]),
+    periodEnd: idx(["period_end", "to", "end"]),
+    amount: idx(["amount", "total", "total_amount"]),
+    electricityKwh: idx(["electricity_kwh", "e_kwh", "elec_kwh"]),
+    gasKwh: idx(["gas_kwh", "g_kwh"]),
+    electricityAmount: idx(["electricity_amount", "e_amount", "elec_amount"]),
+    gasAmount: idx(["gas_amount", "g_amount"]),
+    vatAmount: idx(["vat_amount", "vat"]),
+    invoiceNumber: idx(["invoice_number", "invoice", "invoice_no"]),
+    notes: idx(["notes", "note"]),
+  };
+
+  const rows: BulkRow[] = [];
+  const errors: Array<{ row: number; message: string }> = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const cells = data[i];
+    const get = (c: number) => (c >= 0 ? (cells[c] ?? "").trim() : "");
+    const propertyCode = get(col.propertyCode).toUpperCase();
+    const supplier = get(col.supplier);
+    const periodStart = get(col.periodStart);
+    const periodEnd = get(col.periodEnd);
+    const amount = bulkNum(get(col.amount));
+    if (!propertyCode || !supplier || !periodStart || !periodEnd || !amount) continue;
+    if (!PROPERTY_CODE_VALUES.includes(propertyCode)) {
+      errors.push({ row: i + 1, message: `Unknown property code: ${propertyCode}` });
+      continue;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd)) {
+      errors.push({
+        row: i + 1,
+        message: `Period dates must be YYYY-MM-DD (got ${periodStart} → ${periodEnd})`,
+      });
+      continue;
+    }
+    rows.push({
+      propertyCode,
+      supplier,
+      periodStart,
+      periodEnd,
+      amount,
+      electricityKwh: bulkNum(get(col.electricityKwh)),
+      gasKwh: bulkNum(get(col.gasKwh)),
+      electricityAmount: bulkNum(get(col.electricityAmount)),
+      gasAmount: bulkNum(get(col.gasAmount)),
+      vatAmount: bulkNum(get(col.vatAmount)),
+      invoiceNumber: get(col.invoiceNumber) || null,
+      notes: get(col.notes) || null,
+    });
+  }
+  return { rows, errors };
+}
+
+function useBulkImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (rows: BulkRow[]) => {
+      const res = await apiRequest("POST", "/api/energy-invoices/bulk-import", { rows });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Bulk import failed");
+      }
+      return res.json() as Promise<BulkImportResult>;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/energy-invoices"] }),
+  });
+}
+
+function BulkImportButton() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [parseErrors, setParseErrors] = useState<Array<{ row: number; message: string }>>([]);
+  const [parsedRows, setParsedRows] = useState<BulkRow[] | null>(null);
+  const importMut = useBulkImport();
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const { rows, errors } = parseLongFormatCsv(text);
+      setParsedRows(rows);
+      setParseErrors(errors);
+      setOpen(true);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  async function handleConfirm() {
+    if (!parsedRows) return;
+    await importMut.mutateAsync(parsedRows);
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="flex items-center gap-1.5 px-3 py-1.5 border border-emerald-300 text-emerald-700 text-sm rounded hover:bg-emerald-50"
+        title="Bulk import multiple invoices (long format CSV) — typically EON multi-month upload"
+      >
+        <Upload size={14} />
+        Bulk Import
+      </button>
+      <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
+
+      {open && parsedRows && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h2 className="font-semibold text-gray-900">Bulk Import — review</h2>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3 text-sm">
+              <p className="text-gray-700">
+                Parsed <strong>{parsedRows.length}</strong> rows from your CSV.
+                {parseErrors.length > 0 && (
+                  <span className="text-red-600">
+                    {" "}
+                    {parseErrors.length} rows failed validation (see below).
+                  </span>
+                )}
+              </p>
+
+              <details className="border border-gray-200 rounded p-3">
+                <summary className="cursor-pointer text-xs text-youco-blue">
+                  Preview first 8 rows
+                </summary>
+                <table className="w-full mt-2 text-xs">
+                  <thead>
+                    <tr>
+                      <th className="text-left px-1">Property</th>
+                      <th className="text-left px-1">Supplier</th>
+                      <th className="text-left px-1">Period</th>
+                      <th className="text-right px-1">Amount</th>
+                      <th className="text-right px-1">E kWh</th>
+                      <th className="text-right px-1">G kWh</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedRows.slice(0, 8).map((r, i) => (
+                      <tr key={i}>
+                        <td className="px-1 font-mono">{r.propertyCode}</td>
+                        <td className="px-1">{r.supplier}</td>
+                        <td className="px-1">
+                          {r.periodStart} → {r.periodEnd}
+                        </td>
+                        <td className="px-1 text-right">£{r.amount}</td>
+                        <td className="px-1 text-right">{r.electricityKwh ?? "—"}</td>
+                        <td className="px-1 text-right">{r.gasKwh ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {parsedRows.length > 8 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    ... and {parsedRows.length - 8} more
+                  </p>
+                )}
+              </details>
+
+              {parseErrors.length > 0 && (
+                <details className="border border-red-200 rounded p-3 bg-red-50">
+                  <summary className="cursor-pointer text-xs text-red-700">
+                    {parseErrors.length} validation errors
+                  </summary>
+                  <ul className="mt-2 text-xs text-red-700 space-y-0.5">
+                    {parseErrors.slice(0, 20).map((e, i) => (
+                      <li key={i}>
+                        Row {e.row}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
+              {importMut.error && (
+                <p className="text-sm text-red-600">{importMut.error.message}</p>
+              )}
+
+              {importMut.data && (
+                <div className="border border-gray-200 rounded p-3 space-y-2 bg-gray-50">
+                  <p className="text-gray-700">
+                    Imported <strong>{importMut.data.inserted}</strong> /{" "}
+                    {importMut.data.received} rows.{" "}
+                    {importMut.data.skippedDuplicates > 0 && (
+                      <span className="text-amber-700">
+                        {importMut.data.skippedDuplicates} duplicates skipped.
+                      </span>
+                    )}
+                  </p>
+                  {importMut.data.duplicates.length > 0 && (
+                    <details>
+                      <summary className="cursor-pointer text-xs text-amber-700">
+                        Duplicate rows ({importMut.data.duplicates.length})
+                      </summary>
+                      <ul className="mt-1 text-xs text-gray-600 max-h-32 overflow-y-auto">
+                        {importMut.data.duplicates.slice(0, 30).map((d, i) => (
+                          <li key={i}>
+                            Row {d.row}: <code>{d.key}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {importMut.data.gaps.length > 0 && (
+                    <details open>
+                      <summary className="cursor-pointer text-xs text-amber-700 font-semibold">
+                        Missing months ({importMut.data.gaps.length})
+                      </summary>
+                      <ul className="mt-1 text-xs text-gray-700 max-h-40 overflow-y-auto space-y-0.5">
+                        {importMut.data.gaps.map((g, i) => (
+                          <li key={i}>
+                            <code>{g.propertyCode}</code> / {g.supplier} —{" "}
+                            <strong>{g.missingMonth}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {importMut.data.gaps.length === 0 && (
+                    <p className="text-xs text-emerald-700">
+                      No gaps in monthly coverage.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t flex justify-end gap-2">
+              <button
+                onClick={() => setOpen(false)}
+                className="px-4 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+              >
+                {importMut.data ? "Close" : "Cancel"}
+              </button>
+              {!importMut.data && (
+                <button
+                  disabled={parsedRows.length === 0 || importMut.isPending}
+                  onClick={handleConfirm}
+                  className="px-4 py-1.5 text-sm bg-emerald-600 text-white rounded hover:opacity-90 disabled:opacity-50"
+                >
+                  {importMut.isPending
+                    ? "Importing…"
+                    : `Import ${parsedRows.length} rows`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

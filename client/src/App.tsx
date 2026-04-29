@@ -8,6 +8,8 @@ import EnergyPage from "@/pages/energy/Energy";
 import EnergyInvoicesPage from "@/pages/energy/Invoices";
 import EnergySyncPage from "@/pages/energy/Sync";
 import EnergyAnalyticsPage from "@/pages/energy/Analytics";
+import DocsListPage from "@/pages/docs/List";
+import DocViewPage from "@/pages/docs/View";
 import ComingSoon from "@/pages/ComingSoon";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -83,6 +85,16 @@ function AppRoutes() {
             title="Broadband"
             description="BT and others. Circuit ID, speed, account."
           />
+        </Layout>
+      </Route>
+      <Route path="/docs/:slug">
+        <Layout title="Operations Manual">
+          <DocViewPage />
+        </Layout>
+      </Route>
+      <Route path="/docs">
+        <Layout title="Operations Manual">
+          <DocsListPage />
         </Layout>
       </Route>
       <Route>

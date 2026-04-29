@@ -220,6 +220,185 @@ router.delete("/:id", requireAdmin, async (req, res) => {
   res.json({ deleted: true });
 });
 
+// ─── POST /api/energy-invoices/bulk-import ────────────────────────────────────
+//
+// Long-format CSV bulk importer for invoices (typical EON / multi-supplier
+// use case). Each row is one invoice. Detects duplicates by
+// (property_code, supplier, period_start, period_end) and reports gaps in
+// monthly coverage.
+
+const bulkRowSchema = z.object({
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  supplier: z.string().min(1),
+  periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amount: z.union([z.string(), z.number()]).transform((v) => String(v)),
+  electricityKwh: numStr,
+  gasKwh: numStr,
+  electricityAmount: numStr,
+  gasAmount: numStr,
+  vatAmount: numStr,
+  invoiceNumber: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+const bulkImportSchema = z.object({
+  rows: z.array(bulkRowSchema),
+});
+
+router.post("/bulk-import", requireContributor, async (req, res) => {
+  const parsed = bulkImportSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const incoming = parsed.data.rows;
+  if (incoming.length === 0) {
+    return res.json({
+      received: 0,
+      inserted: 0,
+      skippedDuplicates: 0,
+      duplicates: [],
+      gaps: [],
+    });
+  }
+
+  const suppliers = [...new Set(incoming.map((r) => r.supplier))];
+  const properties = [...new Set(incoming.map((r) => r.propertyCode))];
+  const minStart = incoming.reduce(
+    (a, r) => (a < r.periodStart ? a : r.periodStart),
+    incoming[0].periodStart
+  );
+  const maxEnd = incoming.reduce(
+    (a, r) => (a > r.periodEnd ? a : r.periodEnd),
+    incoming[0].periodEnd
+  );
+
+  const existing = await db
+    .select()
+    .from(energyInvoices)
+    .where(
+      and(
+        gte(energyInvoices.periodStart, minStart),
+        lte(energyInvoices.periodEnd, maxEnd)
+      )
+    );
+
+  const keyOf = (r: {
+    propertyCode: string;
+    supplier: string;
+    periodStart: string;
+    periodEnd: string;
+  }) => `${r.propertyCode}|${r.supplier}|${r.periodStart}|${r.periodEnd}`;
+
+  const existingKeys = new Set(
+    existing
+      .filter((e) => suppliers.includes(e.supplier) && properties.includes(e.propertyCode))
+      .map((e) => keyOf(e as never))
+  );
+
+  const toInsert: typeof incoming = [];
+  const duplicates: Array<{ row: number; key: string }> = [];
+  for (let i = 0; i < incoming.length; i++) {
+    const k = keyOf(incoming[i]);
+    if (existingKeys.has(k)) {
+      duplicates.push({ row: i + 1, key: k });
+    } else {
+      existingKeys.add(k);
+      toInsert.push(incoming[i]);
+    }
+  }
+
+  if (toInsert.length > 0) {
+    await db.insert(energyInvoices).values(
+      toInsert.map((r) => ({
+        propertyCode: r.propertyCode,
+        supplier: r.supplier,
+        periodStart: r.periodStart,
+        periodEnd: r.periodEnd,
+        amount: r.amount,
+        electricityKwh: r.electricityKwh ?? null,
+        gasKwh: r.gasKwh ?? null,
+        electricityAmount: r.electricityAmount ?? null,
+        gasAmount: r.gasAmount ?? null,
+        vatAmount: r.vatAmount ?? null,
+        invoiceNumber: r.invoiceNumber ?? null,
+        notes: r.notes ?? null,
+        source: "csv_import" as const,
+        updatedAt: sql`now()`,
+      }))
+    );
+  }
+
+  // Gap analysis: per (supplier × property), find months with no invoice
+  // between min and max known periods.
+  const allRows = await db
+    .select()
+    .from(energyInvoices)
+    .where(
+      and(
+        gte(energyInvoices.periodStart, minStart),
+        lte(energyInvoices.periodEnd, maxEnd)
+      )
+    );
+
+  function monthKey(d: string) {
+    return d.slice(0, 7);
+  }
+  function* monthsBetween(from: string, to: string) {
+    const start = new Date(from + "T00:00:00Z");
+    const end = new Date(to + "T00:00:00Z");
+    const cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const stop = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+    while (cur.getTime() <= stop.getTime()) {
+      yield cur.toISOString().slice(0, 7);
+      cur.setUTCMonth(cur.getUTCMonth() + 1);
+    }
+  }
+
+  const gaps: Array<{ propertyCode: string; supplier: string; missingMonth: string }> = [];
+  for (const supplier of suppliers) {
+    for (const propertyCode of properties) {
+      const relevant = allRows.filter(
+        (r) => r.supplier === supplier && r.propertyCode === propertyCode
+      );
+      if (relevant.length === 0) continue;
+      const months = new Set(relevant.map((r) => monthKey(r.periodStart)));
+      const minM = relevant.reduce(
+        (a, r) => (a < r.periodStart ? a : r.periodStart),
+        relevant[0].periodStart
+      );
+      const maxM = relevant.reduce(
+        (a, r) => (a > r.periodEnd ? a : r.periodEnd),
+        relevant[0].periodEnd
+      );
+      for (const m of monthsBetween(minM, maxM)) {
+        if (!months.has(m)) {
+          gaps.push({ propertyCode, supplier, missingMonth: m });
+        }
+      }
+    }
+  }
+
+  await logAudit({
+    userId: req.user!.id,
+    userName: req.user!.username,
+    action: "created",
+    entity: "energy_invoices",
+    entityId: null,
+    fieldChanged: null,
+    oldValue: null,
+    newValue: `Bulk import: ${toInsert.length}/${incoming.length} inserted, ${duplicates.length} duplicates`,
+  });
+
+  res.json({
+    received: incoming.length,
+    inserted: toInsert.length,
+    skippedDuplicates: duplicates.length,
+    duplicates,
+    gaps,
+  });
+});
+
 // ─── DELETE /api/energy-invoices (clear all — admin only) ─────────────────────
 
 router.delete("/", requireAdmin, async (_req, res) => {

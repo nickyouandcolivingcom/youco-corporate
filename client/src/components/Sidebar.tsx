@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Droplets,
   Wifi,
+  BookOpen,
 } from "lucide-react";
 
 interface NavItem {
@@ -59,6 +60,12 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
     section: "BROADBAND",
     items: [
       { label: "Accounts", href: "/broadband", icon: <Wifi size={16} /> },
+    ],
+  },
+  {
+    section: "RULES & DOCS",
+    items: [
+      { label: "Operations Manual", href: "/docs", icon: <BookOpen size={16} /> },
     ],
   },
 ];
