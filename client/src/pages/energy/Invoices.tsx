@@ -307,7 +307,15 @@ function fmtKwh(v: string | null | undefined): string {
 }
 
 function sortRows(rows: EnergyInvoice[], key: SortKey, dir: SortDir): EnergyInvoice[] {
-  const numericKeys: SortKey[] = ["amount", "kwh"];
+  const numericKeys: SortKey[] = [
+    "amount",
+    "kwh",
+    "electricityKwh",
+    "gasKwh",
+    "electricityAmount",
+    "gasAmount",
+    "vatAmount",
+  ];
   const dateKeys: SortKey[] = ["periodStart", "periodEnd", "createdAt", "updatedAt"];
   return [...rows].sort((a, b) => {
     const av = a[key];
@@ -518,11 +526,15 @@ export default function EnergyInvoicesPage() {
 
   const totals = useMemo(() => {
     const amt = sorted.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
-    const kwh = sorted.reduce(
-      (acc, r) => acc + (r.kwh != null ? Number(r.kwh) : 0),
+    const eKwh = sorted.reduce(
+      (acc, r) => acc + (r.electricityKwh != null ? Number(r.electricityKwh) : 0),
       0
     );
-    return { amount: amt, kwh };
+    const gKwh = sorted.reduce(
+      (acc, r) => acc + (r.gasKwh != null ? Number(r.gasKwh) : 0),
+      0
+    );
+    return { amount: amt, eKwh, gKwh };
   }, [sorted]);
 
   const createMut = useCreate();
@@ -720,11 +732,19 @@ export default function EnergyInvoicesPage() {
           Total spend:{" "}
           <strong className="text-gray-900">{gbp.format(totals.amount)}</strong>
         </span>
-        {totals.kwh > 0 && (
+        {totals.eKwh > 0 && (
           <span>
-            Total kWh:{" "}
+            E kWh:{" "}
             <strong className="text-gray-900">
-              {totals.kwh.toLocaleString("en-GB", { maximumFractionDigits: 2 })}
+              {totals.eKwh.toLocaleString("en-GB", { maximumFractionDigits: 0 })}
+            </strong>
+          </span>
+        )}
+        {totals.gKwh > 0 && (
+          <span>
+            G kWh:{" "}
+            <strong className="text-gray-900">
+              {totals.gKwh.toLocaleString("en-GB", { maximumFractionDigits: 0 })}
             </strong>
           </span>
         )}
@@ -749,7 +769,10 @@ export default function EnergyInvoicesPage() {
                 <Th label="Property" sortable sk="propertyCode" />
                 <Th label="Supplier" sortable sk="supplier" />
                 <Th label="Amount" sortable sk="amount" className="text-right" />
-                <Th label="kWh" sortable sk="kwh" className="text-right" />
+                <Th label="E £" sortable sk="electricityAmount" className="text-right" />
+                <Th label="G £" sortable sk="gasAmount" className="text-right" />
+                <Th label="E kWh" sortable sk="electricityKwh" className="text-right" />
+                <Th label="G kWh" sortable sk="gasKwh" className="text-right" />
                 <Th label="Invoice #" sortable sk="invoiceNumber" />
                 <Th label="Source" sortable sk="source" />
                 {canEdit && <Th label="" className="w-16" />}
@@ -771,7 +794,16 @@ export default function EnergyInvoicesPage() {
                     {fmtMoney(inv.amount)}
                   </td>
                   <td className="px-3 py-2 text-gray-600 text-right tabular-nums text-xs">
-                    {fmtKwh(inv.kwh)}
+                    {fmtMoney(inv.electricityAmount)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 text-right tabular-nums text-xs">
+                    {fmtMoney(inv.gasAmount)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 text-right tabular-nums text-xs">
+                    {fmtKwh(inv.electricityKwh ?? inv.kwh)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 text-right tabular-nums text-xs">
+                    {fmtKwh(inv.gasKwh)}
                   </td>
                   <td className="px-3 py-2 text-gray-600 font-mono text-xs">
                     {inv.invoiceNumber ?? "—"}

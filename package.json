@@ -16,6 +16,7 @@
     "db:seed": "tsx script/seed.ts",
     "db:seed-portfolio": "tsx script/seed-portfolio.ts",
     "db:seed-energy-accounts": "tsx script/seed-energy-accounts.ts",
+    "db:seed-energy-line-items": "tsx script/seed-energy-line-items.ts",
     "db:backfill-payments": "tsx script/backfill-payment-fields.ts"
   },
   "dependencies": {
