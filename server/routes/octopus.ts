@@ -69,17 +69,42 @@ router.post("/discover", requireContributor, async (req, res) => {
       const elec = pickActiveMeterPoint(property.electricity_meter_points);
       const gas = pickActiveMeterPoint(property.gas_meter_points);
 
+      // A serial of "NOTINSTALLED" (or empty/null) means no smart meter is
+      // fitted to that supply — the supply exists in Octopus's records but
+      // there's no meter that the API can return half-hourly data for.
+      // Treat as no real serial and let Sync skip that fuel. Manual readings
+      // can still be entered against the supply via the Readings table.
+      const realSerial = (s: string | undefined | null) => {
+        if (!s) return null;
+        const upper = s.trim().toUpperCase();
+        if (upper === "" || upper === "NOTINSTALLED" || upper === "NOT INSTALLED") return null;
+        return s;
+      };
+
       const mpan = elec?.mpan ?? null;
       const mprn = gas?.mprn ?? null;
-      const elecSerial = elec?.meters[0]?.serial_number ?? null;
-      const gasSerial = gas?.meters[0]?.serial_number ?? null;
+      const elecSerial = realSerial(elec?.meters[0]?.serial_number);
+      const gasSerial = realSerial(gas?.meters[0]?.serial_number);
       const tariffCode = elec
         ? pickActiveAgreement(elec.agreements)?.tariff_code ?? null
         : gas
           ? pickActiveAgreement(gas.agreements)?.tariff_code ?? null
           : null;
 
-      const fuelType = elec && gas ? "Dual" : gas ? "Gas" : "Electricity";
+      // Fuel type reflects what we can actually read via API (real serial
+      // present), not the supply registration. A property with a registered
+      // gas MPRN but no installed gas smart meter is treated as Electricity.
+      const hasRealElec = !!(mpan && elecSerial);
+      const hasRealGas = !!(mprn && gasSerial);
+      const fuelType =
+        hasRealElec && hasRealGas
+          ? "Dual"
+          : hasRealGas
+            ? "Gas"
+            : hasRealElec
+              ? "Electricity"
+              : // Fallback: keep whatever's there in case the property has neither
+                acc.fuelType ?? "Electricity";
 
       await db
         .update(energyAccounts)
