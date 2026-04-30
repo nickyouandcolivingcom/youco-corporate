@@ -510,6 +510,34 @@ const STATUS_BADGE: Record<string, string> = {
   Redeemed: "bg-gray-50 text-gray-600 ring-gray-500/10",
 };
 
+function KpiBox({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: "blue" | "bronze";
+}) {
+  const accentClass =
+    accent === "blue"
+      ? "border-l-4 border-youco-blue"
+      : accent === "bronze"
+        ? "border-l-4 border-youco-bronze"
+        : "border-l-4 border-gray-300";
+  return (
+    <div className={cn("bg-white rounded-lg border border-gray-200 p-4", accentClass)}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {label}
+      </p>
+      <p className="font-heading text-2xl text-gray-900 mt-1 tabular-nums">{value}</p>
+      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
 export default function MortgagesPage() {
   const { data: user } = useUser();
   const isAdmin = user?.role === "admin";
@@ -528,6 +556,17 @@ export default function MortgagesPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const { data: rows = [], isLoading, error } = useMortgages(debouncedSearch);
+  // Pull portfolio_properties for portfolio-wide rent + latent (yield calc).
+  const { data: portfolio = [] } = useQuery<
+    Array<{ currentValueLatent: string | null; grossAnnualRent: string | null }>
+  >({
+    queryKey: ["/api/portfolio"],
+    queryFn: async () => {
+      const r = await fetch("/api/portfolio", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load portfolio");
+      return r.json();
+    },
+  });
 
   // Per-row computed equity values (Latent - Loan, RICS - Loan)
   function equityFor(r: MortgageWithPortfolio, kind: "rics" | "latent"): number | null {
@@ -591,6 +630,37 @@ export default function MortgagesPage() {
       equityLatent: latent - loan,
     };
   }, [sorted]);
+
+  // Portfolio-wide totals (every property, not just mortgaged ones — needed
+  // for accurate Avg Yield where a property might be unencumbered).
+  const portfolioTotals = useMemo(() => {
+    const latent = portfolio.reduce(
+      (a, p) => a + (p.currentValueLatent != null ? Number(p.currentValueLatent) : 0),
+      0
+    );
+    const grossRent = portfolio.reduce(
+      (a, p) => a + (p.grossAnnualRent != null ? Number(p.grossAnnualRent) : 0),
+      0
+    );
+    return { latent, grossRent };
+  }, [portfolio]);
+
+  const kpis = useMemo(() => {
+    const totalLatentValue = portfolioTotals.latent;
+    const totalDebt = totals.loan;
+    // Total annual interest is monthly × 12 for IO loans (the dominant case);
+    // a few rows may be Repayment which would over-state slightly until
+    // monthly_payment_fixed is split into interest + capital. Acceptable
+    // approximation given Nick's portfolio is mostly Interest Only.
+    const totalAnnualInterest = sorted.reduce(
+      (a, r) => a + Number(r.monthlyPaymentFixed ?? 0) * 12,
+      0
+    );
+    const avgLtv = totalLatentValue > 0 ? totalDebt / totalLatentValue : 0;
+    const avgRate = totalDebt > 0 ? totalAnnualInterest / totalDebt : 0;
+    const avgYield = totalLatentValue > 0 ? portfolioTotals.grossRent / totalLatentValue : 0;
+    return { totalLatentValue, totalDebt, avgLtv, avgRate, avgYield };
+  }, [sorted, totals, portfolioTotals]);
 
   // Mortgages with refi date in the next 12 months
   const upcomingRefi = useMemo(() => {
@@ -691,15 +761,31 @@ export default function MortgagesPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-        <span><strong className="text-gray-900">{sorted.length}</strong> mortgages</span>
-        <span>Loan: <strong className="text-gray-900">{gbp.format(totals.loan)}</strong></span>
-        <span>RICS: <strong className="text-gray-900">{gbp.format(totals.rics)}</strong></span>
-        <span>Latent: <strong className="text-gray-900">{gbp.format(totals.latent)}</strong></span>
-        <span>Equity (RICS): <strong className="text-gray-900">{gbp.format(totals.equityRics)}</strong></span>
-        <span>Equity (Latent): <strong className="text-gray-900">{gbp.format(totals.equityLatent)}</strong></span>
-        <span>Monthly: <strong className="text-gray-900">{gbp.format(totals.monthly)}</strong></span>
+      {/* ── Headline KPI boxes ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <KpiBox label="Latent Value" value={gbp.format(kpis.totalLatentValue)} accent="bronze" />
+        <KpiBox label="Loan (Debt)" value={gbp.format(kpis.totalDebt)} accent="blue" />
+        <KpiBox
+          label="Avg LTV"
+          value={`${(kpis.avgLtv * 100).toFixed(1)}%`}
+          sub="Loan ÷ Latent Value"
+        />
+        <KpiBox
+          label="Avg Interest Rate"
+          value={`${(kpis.avgRate * 100).toFixed(2)}%`}
+          sub="Annual interest ÷ Loan"
+        />
+        <KpiBox
+          label="Avg Yield"
+          value={`${(kpis.avgYield * 100).toFixed(2)}%`}
+          sub="Gross rent ÷ Latent Value"
+        />
       </div>
+      <p className="text-xs text-gray-500">
+        <strong className="text-gray-900">{sorted.length}</strong> mortgages.
+        Yields and LTV use Latent Value across all portfolio properties; add
+        leasehold flats to /portfolio to make those accurate.
+      </p>
 
       {upcomingRefi.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
@@ -799,6 +885,45 @@ export default function MortgagesPage() {
                 </tr>
               ))}
             </tbody>
+            {sorted.length > 1 && (
+              <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                <tr className="text-xs font-semibold text-gray-700">
+                  <td className="px-3 py-2 uppercase tracking-wide" colSpan={4}>
+                    Totals
+                  </td>
+                  {/* Latent */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.latent)}
+                  </td>
+                  {/* RICS */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.rics)}
+                  </td>
+                  {/* RICS Date — no total */}
+                  <td />
+                  {/* Loan */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.loan)}
+                  </td>
+                  {/* Eq (Latent) */}
+                  <td className={cn("px-3 py-2 text-right tabular-nums", totals.equityLatent < 0 && "text-red-600")}>
+                    {fmtMoney(totals.equityLatent)}
+                  </td>
+                  {/* Eq (RICS) */}
+                  <td className={cn("px-3 py-2 text-right tabular-nums", totals.equityRics < 0 && "text-red-600")}>
+                    {fmtMoney(totals.equityRics)}
+                  </td>
+                  {/* Term, Rate, Refi Date, ERC — no totals */}
+                  <td colSpan={4} />
+                  {/* Monthly */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.monthly)}
+                  </td>
+                  {/* Status + (action col when canEdit) */}
+                  <td colSpan={canEdit ? 2 : 1} />
+                </tr>
+              </tfoot>
+            )}
           </table>
         )}
       </div>
