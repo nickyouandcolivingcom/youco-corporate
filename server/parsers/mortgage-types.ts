@@ -22,6 +22,11 @@ export interface MortgageRow {
   reversionaryMarginPct: string | null;
   reversionaryFloorPct: string | null;
   monthlyPaymentFixed: string | null;
+  ercSchedule: Array<{ year: number; pct: number }> | null;
+  productFee: string | null;
+  valuationFee: string | null;
+  legalFee: string | null;
+  redemptionFee: string | null;
   notes: string | null;
 }
 

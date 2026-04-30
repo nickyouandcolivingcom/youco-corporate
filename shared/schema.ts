@@ -8,6 +8,7 @@ import {
   numeric,
   date,
   unique,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -223,6 +224,11 @@ export const mortgages = pgTable("mortgages", {
   reversionaryMarginPct: numeric("reversionary_margin_pct", { precision: 6, scale: 3 }),
   reversionaryFloorPct: numeric("reversionary_floor_pct", { precision: 6, scale: 3 }),
   monthlyPaymentFixed: numeric("monthly_payment_fixed", { precision: 12, scale: 2 }),
+  ercSchedule: jsonb("erc_schedule").$type<Array<{ year: number; pct: number }>>(),
+  productFee: numeric("product_fee", { precision: 10, scale: 2 }),
+  valuationFee: numeric("valuation_fee", { precision: 10, scale: 2 }),
+  legalFee: numeric("legal_fee", { precision: 10, scale: 2 }),
+  redemptionFee: numeric("redemption_fee", { precision: 10, scale: 2 }),
   status: text("status").notNull().default("Active"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -362,6 +368,14 @@ export const insertMortgageSchema = createInsertSchema(mortgages, {
   reversionaryMarginPct: z.string().nullable().optional(),
   reversionaryFloorPct: z.string().nullable().optional(),
   monthlyPaymentFixed: z.string().nullable().optional(),
+  ercSchedule: z
+    .array(z.object({ year: z.number().int(), pct: z.number() }))
+    .nullable()
+    .optional(),
+  productFee: z.string().nullable().optional(),
+  valuationFee: z.string().nullable().optional(),
+  legalFee: z.string().nullable().optional(),
+  redemptionFee: z.string().nullable().optional(),
   status: z.enum(["Active", "Redeemed", "Pending"]).default("Active"),
   notes: z.string().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });

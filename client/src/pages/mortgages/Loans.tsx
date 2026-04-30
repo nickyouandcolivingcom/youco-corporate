@@ -38,6 +38,11 @@ interface MortgageForm {
   reversionaryMarginPct: string;
   reversionaryFloorPct: string;
   monthlyPaymentFixed: string;
+  ercSchedule: Array<{ year: number; pct: number }>;
+  productFee: string;
+  valuationFee: string;
+  legalFee: string;
+  redemptionFee: string;
   status: "Active" | "Redeemed" | "Pending";
   notes: string;
 }
@@ -60,9 +65,32 @@ const EMPTY_FORM: MortgageForm = {
   reversionaryMarginPct: "",
   reversionaryFloorPct: "",
   monthlyPaymentFixed: "",
+  ercSchedule: [],
+  productFee: "",
+  valuationFee: "",
+  legalFee: "",
+  redemptionFee: "",
   status: "Active",
   notes: "",
 };
+
+/**
+ * Compact ERC string: always 5 slots, dashes for years with no charge.
+ * Examples:
+ *   [Y1=5,Y2=4,Y3=3,Y4=2,Y5=1]   → "5/4/3/2/1"
+ *   [Y1=4,Y2=2]                  → "4/2/-/-/-"
+ *   []                           → "—"
+ */
+function fmtErcCompact(tiers: Array<{ year: number; pct: number }> | null | undefined): string {
+  if (!tiers || tiers.length === 0) return "—";
+  const slots = ["-", "-", "-", "-", "-"];
+  for (const t of tiers) {
+    if (t.year >= 1 && t.year <= 5) {
+      slots[t.year - 1] = String(t.pct).replace(/\.0+$/, "");
+    }
+  }
+  return slots.join("/");
+}
 
 const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
 
@@ -91,6 +119,9 @@ function fmtTermYears(months: number | null | undefined): string {
 
 function payload(form: MortgageForm) {
   const t = (v: string) => (v.trim() === "" ? null : v.trim());
+  const cleanErc = form.ercSchedule
+    .filter((tier) => Number.isFinite(tier.pct) && tier.pct > 0)
+    .sort((a, b) => a.year - b.year);
   return {
     lender: form.lender.trim(),
     propertyCode: form.propertyCode,
@@ -109,6 +140,11 @@ function payload(form: MortgageForm) {
     reversionaryMarginPct: t(form.reversionaryMarginPct),
     reversionaryFloorPct: t(form.reversionaryFloorPct),
     monthlyPaymentFixed: t(form.monthlyPaymentFixed),
+    ercSchedule: cleanErc.length > 0 ? cleanErc : null,
+    productFee: t(form.productFee),
+    valuationFee: t(form.valuationFee),
+    legalFee: t(form.legalFee),
+    redemptionFee: t(form.redemptionFee),
     status: form.status,
     notes: t(form.notes),
   };
@@ -383,10 +419,85 @@ function FormFields({
           </select>
         </div>
       </div>
+      <ErcEditor
+        tiers={form.ercSchedule}
+        onChange={(tiers) => setForm((f) => ({ ...f, ercSchedule: tiers }))}
+      />
+      <div className="grid grid-cols-4 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Product Fee £</label>
+          <input value={form.productFee} onChange={(e) => set("productFee")(e.target.value)} placeholder="5100" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Valuation £</label>
+          <input value={form.valuationFee} onChange={(e) => set("valuationFee")(e.target.value)} placeholder="630" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Legal Fee £</label>
+          <input value={form.legalFee} onChange={(e) => set("legalFee")(e.target.value)} placeholder="850" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Redemption £</label>
+          <input value={form.redemptionFee} onChange={(e) => set("redemptionFee")(e.target.value)} placeholder="114" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+        </div>
+      </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
         <textarea value={form.notes} onChange={(e) => set("notes")(e.target.value)} rows={2} className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm resize-none" />
       </div>
+    </div>
+  );
+}
+
+function ErcEditor({
+  tiers,
+  onChange,
+}: {
+  tiers: Array<{ year: number; pct: number }>;
+  onChange: (tiers: Array<{ year: number; pct: number }>) => void;
+}) {
+  // Normalise: fill 5 slots, even if user has fewer tiers. Slots without
+  // a tier render with empty pct field; user enters a number to add the
+  // tier, or blanks to remove.
+  const slots = Array.from({ length: 5 }, (_, i) => {
+    const year = i + 1;
+    const found = tiers.find((t) => t.year === year);
+    return { year, pct: found ? String(found.pct) : "" };
+  });
+
+  function setSlot(year: number, raw: string) {
+    const next = tiers.filter((t) => t.year !== year);
+    const trimmed = raw.trim();
+    if (trimmed !== "") {
+      const n = Number(trimmed);
+      if (!Number.isNaN(n) && n > 0) next.push({ year, pct: n });
+    }
+    onChange(next);
+  }
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">
+        Early Repayment Charges (%)
+      </label>
+      <div className="grid grid-cols-5 gap-2">
+        {slots.map((s) => (
+          <div key={s.year}>
+            <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+              Year {s.year}
+            </p>
+            <input
+              value={s.pct}
+              onChange={(e) => setSlot(s.year, e.target.value)}
+              placeholder="—"
+              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm tabular-nums text-center"
+            />
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400 mt-1">
+        Leave a year blank if there's no charge that year. Format example: 5/4/3/2/1.
+      </p>
     </div>
   );
 }
@@ -493,6 +604,11 @@ export default function MortgagesPage() {
       reversionaryMarginPct: m.reversionaryMarginPct ?? "",
       reversionaryFloorPct: m.reversionaryFloorPct ?? "",
       monthlyPaymentFixed: m.monthlyPaymentFixed ?? "",
+      ercSchedule: m.ercSchedule ?? [],
+      productFee: m.productFee ?? "",
+      valuationFee: m.valuationFee ?? "",
+      legalFee: m.legalFee ?? "",
+      redemptionFee: m.redemptionFee ?? "",
       status: (m.status as MortgageForm["status"]) ?? "Active",
       notes: m.notes ?? "",
     });
@@ -584,6 +700,7 @@ export default function MortgagesPage() {
                 <Th label="Term" sortable sk="termMonths" />
                 <Th label="Rate" sortable sk="fixedRatePct" />
                 <Th label="Fixed end" sortable sk="fixedEndDate" />
+                <Th label="ERC (Y1-5)" />
                 <Th label="Monthly" sortable sk="monthlyPaymentFixed" className="text-right" />
                 <Th label="Status" sortable sk="status" />
                 {canEdit && <Th label="" className="w-16" />}
@@ -605,6 +722,9 @@ export default function MortgagesPage() {
                   <td className="px-3 py-2 text-xs">{fmtTermYears(m.termMonths)}</td>
                   <td className="px-3 py-2 text-xs">{fmtPct(m.fixedRatePct)}</td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.fixedEndDate)}</td>
+                  <td className="px-3 py-2 text-xs font-mono whitespace-nowrap" title="ERC % per year (year 1 → year 5)">
+                    {fmtErcCompact(m.ercSchedule)}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.monthlyPaymentFixed)}</td>
                   <td className="px-3 py-2">
                     <span className={cn("inline-flex px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset", STATUS_BADGE[m.status] ?? STATUS_BADGE.Active)}>

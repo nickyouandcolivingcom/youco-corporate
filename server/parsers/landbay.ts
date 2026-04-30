@@ -22,7 +22,15 @@
  */
 
 import { matchAddressToPropertyCode } from "./address-match.js";
-import { parseDate, num } from "./mortgage-helpers.js";
+import {
+  parseDate,
+  num,
+  extractErcSchedule,
+  extractRedemptionFee,
+  extractProductFee,
+  extractValuationFee,
+  extractLegalFee,
+} from "./mortgage-helpers.js";
 import type { MortgageRow, MortgageParseResult } from "./mortgage-types.js";
 
 export function parseLandbayOffer(
@@ -121,6 +129,11 @@ export function parseLandbayOffer(
     reversionaryMarginPct,
     reversionaryFloorPct,
     monthlyPaymentFixed,
+    ercSchedule: extractErcSchedule(text),
+    productFee: extractProductFee(text),
+    valuationFee: extractValuationFee(text),
+    legalFee: extractLegalFee(text),
+    redemptionFee: extractRedemptionFee(text),
     notes,
   };
 

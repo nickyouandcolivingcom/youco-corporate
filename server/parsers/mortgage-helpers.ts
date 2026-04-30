@@ -50,3 +50,124 @@ export function addMonths(isoDate: string, months: number): string {
   d.setUTCMonth(d.getUTCMonth() + months);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * Best-effort early-repayment-charge schedule extraction.
+ *
+ * Looks for the ERC table that every regulated mortgage offer contains.
+ * Two common formats:
+ *
+ *   "During the first 12 months 4% of the amount repaid £12,699.00
+ *    During the following 12 months 2% of the amount repaid £6,349.50"
+ *
+ *   Tabular: "1 year 5% | 2 year 4% | 3 year 3% ..."
+ *
+ * Returns one tier per fixed-period year, in order. Falls back to
+ * the standard 5-year-fix shape (5/4/3/2/1) only if the offer mentions
+ * "early repayment" but no specific tiers are extractable.
+ */
+export function extractErcSchedule(
+  text: string
+): Array<{ year: number; pct: number }> | null {
+  const stripped = text.replace(/\s+/g, " ");
+
+  // Find the ERC section. Common headings: "Early repayment", "Section 8",
+  // "8. Early repayment", "Early Repayment Charges", etc.
+  const sectionMatch = stripped.match(/early repayment[\s\S]{0,3000}/i);
+  if (!sectionMatch) return null;
+  const section = sectionMatch[0];
+
+  // Pattern 1: "During the first 12 months X%" / "During the following 12 months Y%"
+  const followingTiers = [
+    ...section.matchAll(
+      /(?:During\s+the\s+(?:first|following)\s+\d+\s*months|first\s+12\s*months|second\s+year)[^%]{0,40}?(\d+(?:\.\d+)?)\s*%/gi
+    ),
+  ];
+  if (followingTiers.length >= 2) {
+    return followingTiers.slice(0, 5).map((m, i) => ({
+      year: i + 1,
+      pct: parseFloat(m[1]),
+    }));
+  }
+
+  // Pattern 2: "Year N: X%" or "1st year X%"
+  const yearTiers = [
+    ...section.matchAll(
+      /(\d+)(?:st|nd|rd|th)?\s*year[^%]{0,30}?(\d+(?:\.\d+)?)\s*%/gi
+    ),
+  ];
+  if (yearTiers.length >= 2) {
+    return yearTiers.slice(0, 5).map((m) => ({
+      year: parseInt(m[1], 10),
+      pct: parseFloat(m[2]),
+    }));
+  }
+
+  // Pattern 3: tabular ERC — find a sequence of "X% of the amount" appearing 2+ times
+  const pctOfAmount = [
+    ...section.matchAll(/(\d+(?:\.\d+)?)\s*%\s*of\s+the\s+amount/gi),
+  ];
+  if (pctOfAmount.length >= 2) {
+    return pctOfAmount.slice(0, 5).map((m, i) => ({
+      year: i + 1,
+      pct: parseFloat(m[1]),
+    }));
+  }
+
+  return null;
+}
+
+/**
+ * Extract the redemption administration fee. Charged on redemption — varies
+ * by lender (£114-£200 typical). Common labels:
+ *   "Redemption Administration Fee ... £114.00"
+ *   "Redemption discharge costs ... £200.00"
+ */
+export function extractRedemptionFee(text: string): string | null {
+  const stripped = text.replace(/\s+/g, " ");
+  const m =
+    stripped.match(/Redemption\s*(?:Administration|Discharge)?\s*[Ff]ee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i) ??
+    stripped.match(/Redemption\s*discharge\s*costs[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i);
+  if (!m) return null;
+  return num(m[1]);
+}
+
+/**
+ * Extract the product / arrangement / completion fee. The biggest variable
+ * fee between deals — typically 1-2% of loan, ~£5-7k for our portfolio.
+ */
+export function extractProductFee(text: string): string | null {
+  const stripped = text.replace(/\s+/g, " ");
+  const m =
+    stripped.match(/Product Fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i) ??
+    stripped.match(/Arrangement Fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i) ??
+    stripped.match(/completion fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i);
+  if (!m) return null;
+  return num(m[1]);
+}
+
+/**
+ * Extract the valuation fee (usually one-off, paid at application).
+ */
+export function extractValuationFee(text: string): string | null {
+  const stripped = text.replace(/\s+/g, " ");
+  const m =
+    stripped.match(/Valuation\s*(?:and Assessment)?\s*Fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i) ??
+    stripped.match(/Valuation fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i);
+  if (!m) return null;
+  return num(m[1]);
+}
+
+/**
+ * Extract the legal fee estimate. Variable — Lender's solicitor fee +
+ * borrower's conveyancer fee. Often "Estimated Lender's legal fee... £850".
+ */
+export function extractLegalFee(text: string): string | null {
+  const stripped = text.replace(/\s+/g, " ");
+  const m =
+    stripped.match(/Lender['']?s?\s*legal fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i) ??
+    stripped.match(/Estimated\s*legal fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i) ??
+    stripped.match(/Legal fee[^£]{0,80}?£([\d,]+(?:\.\d{2})?)/i);
+  if (!m) return null;
+  return num(m[1]);
+}
