@@ -140,46 +140,195 @@ router.delete("/:id", requireAdmin, async (req, res) => {
   res.json({ deleted: true });
 });
 
-// Seed initial 10 accounts based on Nick's configuration. Idempotent — only
-// inserts if the (supplier, property_code) pair doesn't already exist.
+// Seed the 11 known circuits with all data extracted from contracts/bills.
+// Behaviour: INSERTS if missing, REFRESHES only currently-null fields if exists
+// (so user edits are preserved while gaps get filled). Login email is shared.
+type Seed = {
+  supplier: string;
+  propertyCode: string;
+  accountNumber?: string;
+  loginEmail?: string;
+  connectionType?: string;
+  downloadMbps?: number;
+  uploadMbps?: number;
+  contractStart?: string;
+  contractEnd?: string;
+  monthlyCost?: string;
+  nextPriceIncreaseDate?: string;
+  nextPriceIncreaseAmount?: string;
+  latestInvoiceDate?: string;
+  latestInvoiceAmount?: string;
+  tenantPaid?: boolean;
+  notes?: string;
+};
+
 router.post("/seed", requireAdmin, async (_req, res) => {
-  const seeds: Array<{
-    supplier: string;
-    propertyCode: string;
-    accountNumber?: string;
-    tenantPaid?: boolean;
-  }> = [
+  const EMAIL = "nick@youandcoliving.com";
+  const seeds: Seed[] = [
+    // Landlord Broadband — single account, 5 properties, no contract data captured
     { supplier: "Landlord Broadband", propertyCode: "16RC", accountNumber: "LALAS004916" },
     { supplier: "Landlord Broadband", propertyCode: "10KG", accountNumber: "LALAS004916" },
     { supplier: "Landlord Broadband", propertyCode: "32LFR", accountNumber: "LALAS004916" },
     { supplier: "Landlord Broadband", propertyCode: "84DD", accountNumber: "LALAS004916" },
     { supplier: "Landlord Broadband", propertyCode: "4WS", accountNumber: "LALAS004916" },
-    { supplier: "BT", propertyCode: "26BLA", accountNumber: "GB28908687" },
-    { supplier: "Virgin Media", propertyCode: "26BLB", accountNumber: "755376201" },
-    { supplier: "BT", propertyCode: "26BLC", accountNumber: "GB28785491" },
-    { supplier: "Virgin Media", propertyCode: "27BLA", accountNumber: "755468201" },
-    { supplier: "Virgin Media", propertyCode: "27BLB", accountNumber: "766651801" },
-    { supplier: "Sky", propertyCode: "27BLD", accountNumber: "00625133427348" },
+
+    // BT 26BLA — Fibre 2 with Complete Wi-Fi (FTTC). £30.71 reg less £5 promo = £25.71.
+    {
+      supplier: "BT",
+      propertyCode: "26BLA",
+      accountNumber: "GB28908687",
+      loginEmail: EMAIL,
+      connectionType: "FTTC (Fibre to Cabinet)",
+      downloadMbps: 74,
+      uploadMbps: 18,
+      monthlyCost: "25.71",
+      latestInvoiceDate: "2026-04-24",
+      latestInvoiceAmount: "25.71",
+      notes: "BT Fibre 2 with Complete Wi-Fi. £5/mo special offer discount; contract end date not in latest bill — check original BT order email.",
+    },
+
+    // BT 26BLC — Fibre 1 (FTTC). Just had price hike 31 Mar 2026 (£37.86 → £41.86).
+    {
+      supplier: "BT",
+      propertyCode: "26BLC",
+      accountNumber: "GB28785491",
+      loginEmail: EMAIL,
+      connectionType: "FTTC (Fibre to Cabinet)",
+      downloadMbps: 51,
+      uploadMbps: 9,
+      monthlyCost: "36.86",
+      latestInvoiceDate: "2026-04-24",
+      latestInvoiceAmount: "39.96",
+      notes: "BT Fibre 1. £5/mo special offer discount; price already increased 31 Mar 2026 from £37.86 to £41.86 (regular). Contract end date not in latest bill.",
+    },
+
+    // Virgin 26BLB — M500 + Netflix Standard with Ads. 24-month contract.
+    {
+      supplier: "Virgin Media",
+      propertyCode: "26BLB",
+      accountNumber: "755376201",
+      loginEmail: EMAIL,
+      connectionType: "FTTP (Full Fibre)",
+      downloadMbps: 548,
+      uploadMbps: 53,
+      contractStart: "2025-11-27",
+      contractEnd: "2027-11-26",
+      monthlyCost: "47.00",
+      nextPriceIncreaseDate: "2027-04-01",
+      nextPriceIncreaseAmount: "4.00",
+      latestInvoiceDate: "2026-04-02",
+      latestInvoiceAmount: "47.00",
+      notes: "Virgin M500 + Netflix Std w/Ads. Escalator: £43→£47 Apr 2026 (done) → £51 Apr 2027 → £80 from 27 Nov 2027 (promo end).",
+    },
+
+    // Virgin 27BLA — M350. Welcome offer 18-month savings ends 28 Nov 2026.
+    {
+      supplier: "Virgin Media",
+      propertyCode: "27BLA",
+      accountNumber: "755468201",
+      loginEmail: EMAIL,
+      connectionType: "FTTP (Full Fibre)",
+      monthlyCost: "33.49",
+      contractEnd: "2026-11-28",
+      nextPriceIncreaseDate: "2026-11-28",
+      nextPriceIncreaseAmount: "36.01",
+      latestInvoiceDate: "2026-04-21",
+      latestInvoiceAmount: "33.49",
+      notes: "Virgin M350. Welcome-offer discount £36.01/mo ends 28 Nov 2026 — bill jumps to £69.50/mo unless recontracted.",
+    },
+
+    // Virgin 27BLB — M500. 18-month contract — IMMINENT cliff 13 May 2026.
+    {
+      supplier: "Virgin Media",
+      propertyCode: "27BLB",
+      accountNumber: "766651801",
+      loginEmail: EMAIL,
+      connectionType: "FTTP (Full Fibre)",
+      downloadMbps: 548,
+      uploadMbps: 52,
+      contractStart: "2024-11-13",
+      contractEnd: "2026-05-12",
+      monthlyCost: "41.65",
+      nextPriceIncreaseDate: "2026-05-13",
+      nextPriceIncreaseAmount: "30.35",
+      latestInvoiceDate: "2026-04-02",
+      latestInvoiceAmount: "41.65",
+      notes: "Virgin M500. Welcome-offer 18-month discount ends 12 May 2026 — bill jumps from £41.65 to £72.00/mo from 13 May. RECONTRACT URGENTLY.",
+    },
+
+    // Sky 27BLD — Broadband Superfast (FTTC) + Talk Internet Calls.
+    {
+      supplier: "Sky",
+      propertyCode: "27BLD",
+      accountNumber: "00625133427348",
+      loginEmail: EMAIL,
+      connectionType: "FTTC (Fibre to Cabinet)",
+      downloadMbps: 61,
+      uploadMbps: 16,
+      monthlyCost: "30.00",
+      contractEnd: "2027-05-21",
+      nextPriceIncreaseDate: "2027-05-22",
+      nextPriceIncreaseAmount: "19.00",
+      latestInvoiceDate: "2026-04-07",
+      latestInvoiceAmount: "30.00",
+      notes: "Sky Broadband Superfast + Sky Talk Internet Calls. £49 list less £19 in-contract+broadband discounts; both discounts end 21 May 2027.",
+    },
   ];
 
   const existing = await db.select().from(broadbandAccounts);
-  const key = (s: string, p: string) => `${s}|${p}`;
-  const have = new Set(existing.map((e) => key(e.supplier, e.propertyCode)));
+  const byKey = new Map(existing.map((e) => [`${e.supplier}|${e.propertyCode}`, e]));
 
   let inserted = 0;
+  let refreshed = 0;
+  let unchanged = 0;
   for (const s of seeds) {
-    if (have.has(key(s.supplier, s.propertyCode))) continue;
-    await db.insert(broadbandAccounts).values({
+    const key = `${s.supplier}|${s.propertyCode}`;
+    const row = byKey.get(key);
+    const values = {
       supplier: s.supplier,
       propertyCode: s.propertyCode,
       accountNumber: s.accountNumber ?? null,
+      loginEmail: s.loginEmail ?? null,
+      connectionType: s.connectionType ?? null,
+      downloadMbps: s.downloadMbps ?? null,
+      uploadMbps: s.uploadMbps ?? null,
+      contractStart: s.contractStart ?? null,
+      contractEnd: s.contractEnd ?? null,
+      monthlyCost: s.monthlyCost ?? null,
+      nextPriceIncreaseDate: s.nextPriceIncreaseDate ?? null,
+      nextPriceIncreaseAmount: s.nextPriceIncreaseAmount ?? null,
+      latestInvoiceDate: s.latestInvoiceDate ?? null,
+      latestInvoiceAmount: s.latestInvoiceAmount ?? null,
       tenantPaid: s.tenantPaid ?? false,
-      status: "Active",
-      updatedAt: sql`now()`,
-    });
-    inserted++;
+      notes: s.notes ?? null,
+    };
+
+    if (!row) {
+      await db.insert(broadbandAccounts).values({
+        ...values,
+        status: "Active",
+        updatedAt: sql`now()`,
+      });
+      inserted++;
+      continue;
+    }
+
+    // Refresh: only set fields the user hasn't already populated.
+    const patch: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (v === null || v === false) continue;
+      const cur = (row as Record<string, unknown>)[k];
+      if (cur === null || cur === "" || cur === undefined) patch[k] = v;
+    }
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = sql`now()`;
+      await db.update(broadbandAccounts).set(patch).where(eq(broadbandAccounts.id, row.id));
+      refreshed++;
+    } else {
+      unchanged++;
+    }
   }
-  res.json({ seeds: seeds.length, inserted, skipped: seeds.length - inserted });
+  res.json({ seeds: seeds.length, inserted, refreshed, unchanged });
 });
 
 export default router;

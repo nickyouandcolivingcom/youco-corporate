@@ -152,7 +152,12 @@ function useSeed() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Failed to seed");
       }
-      return res.json() as Promise<{ inserted: number; skipped: number }>;
+      return res.json() as Promise<{
+        seeds: number;
+        inserted: number;
+        refreshed: number;
+        unchanged: number;
+      }>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/broadband"] }),
   });
@@ -465,13 +470,18 @@ export default function BroadbandAccountsPage() {
           <span>Landlord-paid total <strong className="text-gray-900">£{totalMonthly.toFixed(2)}</strong>/mo</span>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && rows.length === 0 && (
+          {isAdmin && (
             <button
               onClick={() => seedMut.mutate()}
               disabled={seedMut.isPending}
+              title="Insert missing circuits and fill in any blank fields with known contract data"
               className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
             >
-              {seedMut.isPending ? "Seeding…" : "Seed 11 Accounts"}
+              {seedMut.isPending
+                ? "Seeding…"
+                : rows.length === 0
+                ? "Seed 11 Circuits"
+                : "Refresh from Seed"}
             </button>
           )}
           {canEdit && (
@@ -496,7 +506,7 @@ export default function BroadbandAccountsPage() {
           <div className="p-8 text-center text-sm text-red-500">{String(error)}</div>
         ) : sorted.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-400">
-            No broadband circuits yet. {isAdmin && "Click \"Seed 11 Accounts\" to import the known mapping."}
+            No broadband circuits yet. {isAdmin && "Click \"Seed 11 Circuits\" to import the known mapping with contract data."}
           </div>
         ) : (
           <table className="w-full text-sm">
