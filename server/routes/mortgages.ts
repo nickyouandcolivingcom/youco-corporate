@@ -3,8 +3,9 @@ import { eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import pdfParseLib from "pdf-parse";
 import { db } from "../db.js";
-import { mortgages } from "@shared/schema";
+import { mortgages, portfolioProperties } from "@shared/schema";
 import { PROPERTY_CODE_VALUES } from "@shared/property-codes";
+import { matchAddressToPropertyCode } from "../parsers/address-match.js";
 import { requireAuth, requireContributor, requireAdmin } from "../middleware/auth.js";
 import { logAudit, logFieldChanges } from "../audit.js";
 import { parseKrbsOffer } from "../parsers/krbs.js";
@@ -44,9 +45,15 @@ const upsertSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
+// Enriches each mortgage with property-level valuation data via JOIN on
+// property_code. Leasehold flats (26BLA/B/C, 27BLA-D) currently have no
+// portfolio_properties row, so they show "—" for RICS/Latent/RICS Date until
+// they're added. Sums on the parent freehold (26BL/27BL) wouldn't reflect
+// the per-flat value, so no auto-fallback.
 router.get("/", requireAuth, async (req, res) => {
   const search = (req.query.search as string | undefined)?.trim() ?? "";
-  const rows = search
+
+  const baseRows = search
     ? await db
         .select()
         .from(mortgages)
@@ -59,7 +66,27 @@ router.get("/", requireAuth, async (req, res) => {
         )
         .orderBy(mortgages.propertyCode)
     : await db.select().from(mortgages).orderBy(mortgages.propertyCode);
-  res.json(rows);
+
+  // portfolio_properties has `address` not `property_code`. Derive code from
+  // address using the same matcher used elsewhere in the app.
+  const portfolioRows = await db.select().from(portfolioProperties);
+  const portfolioByCode: Record<string, (typeof portfolioRows)[number]> = {};
+  for (const p of portfolioRows) {
+    const code = matchAddressToPropertyCode(p.address);
+    if (code) portfolioByCode[code] = p;
+  }
+
+  const enriched = baseRows.map((m) => {
+    const p = portfolioByCode[m.propertyCode] ?? null;
+    return {
+      ...m,
+      ricsValue: p?.currentValueRics ?? null,
+      latentValue: p?.currentValueLatent ?? null,
+      ricsDate: p?.ricsDate ?? null,
+    };
+  });
+
+  res.json(enriched);
 });
 
 router.post("/", requireContributor, async (req, res) => {

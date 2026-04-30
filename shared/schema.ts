@@ -89,6 +89,7 @@ export const portfolioProperties = pgTable("portfolio_properties", {
   purchasePrice: numeric("purchase_price", { precision: 12, scale: 2 }),
   capitalCosts: numeric("capital_costs", { precision: 12, scale: 2 }),
   currentValueRics: numeric("current_value_rics", { precision: 12, scale: 2 }),
+  ricsDate: date("rics_date"),
   currentValueLatent: numeric("current_value_latent", { precision: 12, scale: 2 }),
   grossAnnualRent: numeric("gross_annual_rent", { precision: 12, scale: 2 }),
   lettingUnits: text("letting_units"),
@@ -271,6 +272,7 @@ export const insertPortfolioPropertySchema = createInsertSchema(portfolioPropert
   purchasePrice: z.string().nullable().optional(),
   capitalCosts: z.string().nullable().optional(),
   currentValueRics: z.string().nullable().optional(),
+  ricsDate: z.string().nullable().optional(),
   currentValueLatent: z.string().nullable().optional(),
   grossAnnualRent: z.string().nullable().optional(),
   lettingUnits: z.string().nullable().optional(),
@@ -421,6 +423,13 @@ export type InsertWaterInvoice = z.infer<typeof insertWaterInvoiceSchema>;
 
 export type Mortgage = typeof mortgages.$inferSelect;
 export type InsertMortgage = z.infer<typeof insertMortgageSchema>;
+
+/** Mortgage row enriched with portfolio_properties valuation fields by GET /api/mortgages. */
+export type MortgageWithPortfolio = Mortgage & {
+  ricsValue: string | null;
+  latentValue: string | null;
+  ricsDate: string | null;
+};
 
 export type Doc = typeof docs.$inferSelect;
 export type InsertDoc = z.infer<typeof insertDocSchema>;

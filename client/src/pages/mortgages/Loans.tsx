@@ -11,13 +11,13 @@ import {
   ChevronDown,
   AlertTriangle,
 } from "lucide-react";
-import type { Mortgage } from "@shared/schema";
+import type { MortgageWithPortfolio } from "@shared/schema";
 import { PROPERTY_CODES, PROPERTY_CODE_VALUES } from "@shared/property-codes";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
-type SortKey = keyof Mortgage;
+type SortKey = keyof MortgageWithPortfolio | "equityRics" | "equityLatent";
 type SortDir = "asc" | "desc";
 
 interface MortgageForm {
@@ -100,6 +100,8 @@ function fmtMoney(v: string | number | null | undefined): string {
   return Number.isNaN(n) ? String(v) : gbp.format(n);
 }
 
+const STATUS_BADGE_PLACEHOLDER_RM = 0; // anchor
+
 function fmtDate(v: string | null | undefined): string {
   if (!v) return "—";
   const d = new Date(v);
@@ -151,7 +153,7 @@ function payload(form: MortgageForm) {
 }
 
 function useMortgages(search: string) {
-  return useQuery<Mortgage[]>({
+  return useQuery<MortgageWithPortfolio[]>({
     queryKey: ["/api/mortgages", search],
     queryFn: async () => {
       const qs = search ? `?search=${encodeURIComponent(search)}` : "";
@@ -519,7 +521,7 @@ export default function MortgagesPage() {
   const [sortKey, setSortKey] = useState<SortKey>("propertyCode");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const [editing, setEditing] = useState<Mortgage | null>(null);
+  const [editing, setEditing] = useState<MortgageWithPortfolio | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState<MortgageForm>(EMPTY_FORM);
   const [editForm, setEditForm] = useState<MortgageForm>(EMPTY_FORM);
@@ -527,12 +529,39 @@ export default function MortgagesPage() {
 
   const { data: rows = [], isLoading, error } = useMortgages(debouncedSearch);
 
+  // Per-row computed equity values (Latent - Loan, RICS - Loan)
+  function equityFor(r: MortgageWithPortfolio, kind: "rics" | "latent"): number | null {
+    const val = kind === "rics" ? r.ricsValue : r.latentValue;
+    if (val == null || r.loanAmount == null) return null;
+    return Number(val) - Number(r.loanAmount);
+  }
+
   const sorted = useMemo(() => {
-    const numericKeys: SortKey[] = ["loanAmount", "valuation", "fixedRatePct", "monthlyPaymentFixed", "termMonths"];
-    const dateKeys: SortKey[] = ["offerDate", "fixedEndDate"];
+    const numericKeys: SortKey[] = [
+      "loanAmount",
+      "valuation",
+      "fixedRatePct",
+      "monthlyPaymentFixed",
+      "termMonths",
+      "ricsValue",
+      "latentValue",
+      "equityRics",
+      "equityLatent",
+    ];
+    const dateKeys: SortKey[] = ["offerDate", "fixedEndDate", "ricsDate"];
     return [...rows].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
+      const av =
+        sortKey === "equityRics"
+          ? equityFor(a, "rics")
+          : sortKey === "equityLatent"
+            ? equityFor(a, "latent")
+            : (a as never)[sortKey];
+      const bv =
+        sortKey === "equityRics"
+          ? equityFor(b, "rics")
+          : sortKey === "equityLatent"
+            ? equityFor(b, "latent")
+            : (b as never)[sortKey];
       if (numericKeys.includes(sortKey)) {
         const an = av == null ? -Infinity : Number(av);
         const bn = bv == null ? -Infinity : Number(bv);
@@ -550,9 +579,17 @@ export default function MortgagesPage() {
 
   const totals = useMemo(() => {
     const loan = sorted.reduce((a, r) => a + Number(r.loanAmount ?? 0), 0);
-    const val = sorted.reduce((a, r) => a + Number(r.valuation ?? 0), 0);
+    const rics = sorted.reduce((a, r) => a + Number(r.ricsValue ?? 0), 0);
+    const latent = sorted.reduce((a, r) => a + Number(r.latentValue ?? 0), 0);
     const monthly = sorted.reduce((a, r) => a + Number(r.monthlyPaymentFixed ?? 0), 0);
-    return { loan, val, monthly, equity: val - loan };
+    return {
+      loan,
+      rics,
+      latent,
+      monthly,
+      equityRics: rics - loan,
+      equityLatent: latent - loan,
+    };
   }, [sorted]);
 
   // Mortgages with refi date in the next 12 months
@@ -584,7 +621,7 @@ export default function MortgagesPage() {
     }
   }
 
-  function openEdit(m: Mortgage) {
+  function openEdit(m: MortgageWithPortfolio) {
     setEditing(m);
     setEditForm({
       lender: m.lender,
@@ -656,9 +693,11 @@ export default function MortgagesPage() {
 
       <div className="flex flex-wrap gap-4 text-sm text-gray-600">
         <span><strong className="text-gray-900">{sorted.length}</strong> mortgages</span>
-        <span>Total loan: <strong className="text-gray-900">{gbp.format(totals.loan)}</strong></span>
-        <span>Total valuation: <strong className="text-gray-900">{gbp.format(totals.val)}</strong></span>
-        <span>Equity: <strong className="text-gray-900">{gbp.format(totals.equity)}</strong></span>
+        <span>Loan: <strong className="text-gray-900">{gbp.format(totals.loan)}</strong></span>
+        <span>RICS: <strong className="text-gray-900">{gbp.format(totals.rics)}</strong></span>
+        <span>Latent: <strong className="text-gray-900">{gbp.format(totals.latent)}</strong></span>
+        <span>Equity (RICS): <strong className="text-gray-900">{gbp.format(totals.equityRics)}</strong></span>
+        <span>Equity (Latent): <strong className="text-gray-900">{gbp.format(totals.equityLatent)}</strong></span>
         <span>Monthly: <strong className="text-gray-900">{gbp.format(totals.monthly)}</strong></span>
       </div>
 
@@ -695,11 +734,15 @@ export default function MortgagesPage() {
                 <Th label="Lender" sortable sk="lender" />
                 <Th label="Borrower" sortable sk="borrowerEntity" />
                 <Th label="Account" />
+                <Th label="Latent" sortable sk="latentValue" className="text-right" />
+                <Th label="RICS" sortable sk="ricsValue" className="text-right" />
+                <Th label="RICS Date" sortable sk="ricsDate" />
                 <Th label="Loan" sortable sk="loanAmount" className="text-right" />
-                <Th label="Value" sortable sk="valuation" className="text-right" />
+                <Th label="Eq (Latent)" sortable sk="equityLatent" className="text-right" />
+                <Th label="Eq (RICS)" sortable sk="equityRics" className="text-right" />
                 <Th label="Term" sortable sk="termMonths" />
                 <Th label="Rate" sortable sk="fixedRatePct" />
-                <Th label="Fixed end" sortable sk="fixedEndDate" />
+                <Th label="Refinancing Date" sortable sk="fixedEndDate" />
                 <Th label="ERC (Y1-5)" />
                 <Th label="Monthly" sortable sk="monthlyPaymentFixed" className="text-right" />
                 <Th label="Status" sortable sk="status" />
@@ -717,8 +760,16 @@ export default function MortgagesPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{m.accountNumber ?? "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.latentValue)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.ricsValue)}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.ricsDate)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(m.loanAmount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.valuation)}</td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums text-xs", equityFor(m, "latent") != null && equityFor(m, "latent")! < 0 && "text-red-600")}>
+                    {fmtMoney(equityFor(m, "latent"))}
+                  </td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums text-xs", equityFor(m, "rics") != null && equityFor(m, "rics")! < 0 && "text-red-600")}>
+                    {fmtMoney(equityFor(m, "rics"))}
+                  </td>
                   <td className="px-3 py-2 text-xs">{fmtTermYears(m.termMonths)}</td>
                   <td className="px-3 py-2 text-xs">{fmtPct(m.fixedRatePct)}</td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.fixedEndDate)}</td>

@@ -30,6 +30,7 @@ interface PropertyForm {
   purchasePrice: string;
   capitalCosts: string;
   currentValueRics: string;
+  ricsDate: string;
   currentValueLatent: string;
   grossAnnualRent: string;
   lettingUnits: string;
@@ -45,6 +46,7 @@ const EMPTY_FORM: PropertyForm = {
   purchasePrice: "",
   capitalCosts: "",
   currentValueRics: "",
+  ricsDate: "",
   currentValueLatent: "",
   grossAnnualRent: "",
   lettingUnits: "",
@@ -223,6 +225,7 @@ function parseCsv(text: string): PropertyForm[] {
       purchasePrice: getMoney(col.purchasePrice),
       capitalCosts: getMoney(col.capitalCosts),
       currentValueRics: getMoney(col.currentValueRics),
+      ricsDate: "",
       currentValueLatent: getMoney(col.currentValueLatent),
       grossAnnualRent: getMoney(col.grossAnnualRent),
       lettingUnits: get(col.lettingUnits),
@@ -408,12 +411,18 @@ function PropertyFormFields({
           placeholder="77223"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Field
           label="Current Value RICS (£)"
           value={form.currentValueRics}
           onChange={set("currentValueRics")}
           placeholder="414990"
+        />
+        <Field
+          label="RICS Date"
+          value={form.ricsDate}
+          onChange={set("ricsDate")}
+          type="date"
         />
         <Field
           label="Current Value Latent (£)"
@@ -509,6 +518,7 @@ export default function PortfolioPage() {
       purchasePrice: p.purchasePrice ?? "",
       capitalCosts: p.capitalCosts ?? "",
       currentValueRics: p.currentValueRics ?? "",
+      ricsDate: p.ricsDate ?? "",
       currentValueLatent: p.currentValueLatent ?? "",
       grossAnnualRent: p.grossAnnualRent ?? "",
       lettingUnits: p.lettingUnits ?? "",
