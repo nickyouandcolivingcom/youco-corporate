@@ -11,6 +11,7 @@ import EnergyAnalyticsPage from "@/pages/energy/Analytics";
 import WaterAccountsPage from "@/pages/water/Accounts";
 import WaterInvoicesPage from "@/pages/water/Invoices";
 import MortgagesPage from "@/pages/mortgages/Loans";
+import BroadbandAccountsPage from "@/pages/broadband/Accounts";
 import DocsListPage from "@/pages/docs/List";
 import DocViewPage from "@/pages/docs/View";
 import ComingSoon from "@/pages/ComingSoon";
@@ -83,10 +84,7 @@ function AppRoutes() {
       </Route>
       <Route path="/broadband">
         <Layout title="Broadband">
-          <ComingSoon
-            title="Broadband"
-            description="BT and others. Circuit ID, speed, account."
-          />
+          <BroadbandAccountsPage />
         </Layout>
       </Route>
       <Route path="/docs/:slug">

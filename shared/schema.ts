@@ -9,6 +9,7 @@ import {
   date,
   unique,
   jsonb,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -236,6 +237,29 @@ export const mortgages = pgTable("mortgages", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const broadbandAccounts = pgTable("broadband_accounts", {
+  id: serial("id").primaryKey(),
+  supplier: text("supplier").notNull(),
+  propertyCode: text("property_code").notNull(),
+  accountNumber: text("account_number"),
+  loginEmail: text("login_email"),
+  connectionType: text("connection_type"),
+  downloadMbps: integer("download_mbps"),
+  uploadMbps: integer("upload_mbps"),
+  contractStart: date("contract_start"),
+  contractEnd: date("contract_end"),
+  monthlyCost: numeric("monthly_cost", { precision: 10, scale: 2 }),
+  nextPriceIncreaseDate: date("next_price_increase_date"),
+  nextPriceIncreaseAmount: numeric("next_price_increase_amount", { precision: 10, scale: 2 }),
+  latestInvoiceDate: date("latest_invoice_date"),
+  latestInvoiceAmount: numeric("latest_invoice_amount", { precision: 10, scale: 2 }),
+  tenantPaid: boolean("tenant_paid").notNull().default(false),
+  status: text("status").notNull().default("Active"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const docs = pgTable("docs", {
   id: serial("id").primaryKey(),
   slug: text("slug").notNull().unique(),
@@ -382,6 +406,26 @@ export const insertMortgageSchema = createInsertSchema(mortgages, {
   notes: z.string().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertBroadbandAccountSchema = createInsertSchema(broadbandAccounts, {
+  supplier: z.string().min(1),
+  propertyCode: z.enum(PROPERTY_CODE_VALUES as [string, ...string[]]),
+  accountNumber: z.string().nullable().optional(),
+  loginEmail: z.string().nullable().optional(),
+  connectionType: z.string().nullable().optional(),
+  downloadMbps: z.number().int().nullable().optional(),
+  uploadMbps: z.number().int().nullable().optional(),
+  contractStart: z.string().nullable().optional(),
+  contractEnd: z.string().nullable().optional(),
+  monthlyCost: z.string().nullable().optional(),
+  nextPriceIncreaseDate: z.string().nullable().optional(),
+  nextPriceIncreaseAmount: z.string().nullable().optional(),
+  latestInvoiceDate: z.string().nullable().optional(),
+  latestInvoiceAmount: z.string().nullable().optional(),
+  tenantPaid: z.boolean().default(false),
+  status: z.enum(ENERGY_STATUSES).default("Active"),
+  notes: z.string().nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertDocSchema = createInsertSchema(docs, {
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, "slug must be lowercase, hyphens only"),
   title: z.string().min(1),
@@ -430,6 +474,9 @@ export type MortgageWithPortfolio = Mortgage & {
   latentValue: string | null;
   ricsDate: string | null;
 };
+
+export type BroadbandAccount = typeof broadbandAccounts.$inferSelect;
+export type InsertBroadbandAccount = z.infer<typeof insertBroadbandAccountSchema>;
 
 export type Doc = typeof docs.$inferSelect;
 export type InsertDoc = z.infer<typeof insertDocSchema>;
