@@ -45,6 +45,19 @@ interface MortgageForm {
   redemptionFee: string;
   status: "Active" | "Redeemed" | "Pending";
   notes: string;
+
+  // Property-register fields. These live on portfolio_properties on the
+  // server but are edited here so the user has one form per property.
+  address: string;
+  postcode: string;
+  lettingUnits: string;
+  purchaseDate: string;
+  purchasePrice: string;
+  capitalCosts: string;
+  currentValueRics: string;
+  ricsDate: string;
+  currentValueLatent: string;
+  grossAnnualRent: string;
 }
 
 const EMPTY_FORM: MortgageForm = {
@@ -72,6 +85,16 @@ const EMPTY_FORM: MortgageForm = {
   redemptionFee: "",
   status: "Active",
   notes: "",
+  address: "",
+  postcode: "",
+  lettingUnits: "",
+  purchaseDate: "",
+  purchasePrice: "",
+  capitalCosts: "",
+  currentValueRics: "",
+  ricsDate: "",
+  currentValueLatent: "",
+  grossAnnualRent: "",
 };
 
 /**
@@ -149,6 +172,18 @@ function payload(form: MortgageForm) {
     redemptionFee: t(form.redemptionFee),
     status: form.status,
     notes: t(form.notes),
+    // Property-register half — server will upsert portfolio_properties
+    // for this propertyCode.
+    address: t(form.address),
+    postcode: t(form.postcode),
+    lettingUnits: t(form.lettingUnits),
+    purchaseDate: t(form.purchaseDate),
+    purchasePrice: t(form.purchasePrice),
+    capitalCosts: t(form.capitalCosts),
+    currentValueRics: t(form.currentValueRics),
+    ricsDate: t(form.ricsDate),
+    currentValueLatent: t(form.currentValueLatent),
+    grossAnnualRent: t(form.grossAnnualRent),
   };
 }
 
@@ -447,6 +482,111 @@ function FormFields({
         <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
         <textarea value={form.notes} onChange={(e) => set("notes")(e.target.value)} rows={2} className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm resize-none" />
       </div>
+
+      {/* ── Property Register ──────────────────────────────────────────── */}
+      <div className="pt-3 mt-3 border-t border-gray-200">
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-2">
+          Property Register
+        </p>
+        <p className="text-[11px] text-gray-400 mb-3">
+          These fields live on the property, not the mortgage. They're shared
+          across every module that uses this property code.
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Address{" "}
+              <span className="text-gray-400 font-normal">
+                (only needed when first creating the property)
+              </span>
+            </label>
+            <input
+              value={form.address}
+              onChange={(e) => set("address")(e.target.value)}
+              placeholder="e.g. Flat A, 26 Brook Lane, Chester"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Postcode</label>
+            <input
+              value={form.postcode}
+              onChange={(e) => set("postcode")(e.target.value)}
+              placeholder="CH2 2AP"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm font-mono"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Units</label>
+            <input
+              value={form.lettingUnits}
+              onChange={(e) => set("lettingUnits")(e.target.value)}
+              placeholder="e.g. 5 ASTs 1 CT Bill"
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Purchase Date</label>
+            <input
+              type="date"
+              value={form.purchaseDate}
+              onChange={(e) => set("purchaseDate")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Purchase Price £</label>
+            <input
+              value={form.purchasePrice}
+              onChange={(e) => set("purchasePrice")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Capital Costs £</label>
+            <input
+              value={form.capitalCosts}
+              onChange={(e) => set("capitalCosts")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">RICS £</label>
+            <input
+              value={form.currentValueRics}
+              onChange={(e) => set("currentValueRics")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">RICS Date</label>
+            <input
+              type="date"
+              value={form.ricsDate}
+              onChange={(e) => set("ricsDate")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Latent £</label>
+            <input
+              value={form.currentValueLatent}
+              onChange={(e) => set("currentValueLatent")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Rent (Gross p.a.) £</label>
+            <input
+              value={form.grossAnnualRent}
+              onChange={(e) => set("grossAnnualRent")(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -728,6 +868,19 @@ export default function MortgagesPage() {
       redemptionFee: m.redemptionFee ?? "",
       status: (m.status as MortgageForm["status"]) ?? "Active",
       notes: m.notes ?? "",
+      // Address is not surfaced on the enriched row (server doesn't return
+      // portfolio_properties.address, just the joined fields). Leave blank —
+      // server will keep the existing address if the row exists.
+      address: "",
+      postcode: m.postcode ?? "",
+      lettingUnits: m.lettingUnits ?? "",
+      purchaseDate: m.purchaseDate ?? "",
+      purchasePrice: m.purchasePrice ?? "",
+      capitalCosts: m.capitalCosts ?? "",
+      currentValueRics: m.ricsValue ?? "",
+      ricsDate: m.ricsDate ?? "",
+      currentValueLatent: m.latentValue ?? "",
+      grossAnnualRent: m.grossAnnualRent ?? "",
     });
   }
 

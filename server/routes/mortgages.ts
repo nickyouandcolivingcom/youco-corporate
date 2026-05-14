@@ -4,7 +4,7 @@ import { z } from "zod";
 import pdfParseLib from "pdf-parse";
 import { db } from "../db.js";
 import { mortgages, portfolioProperties } from "@shared/schema";
-import { PROPERTY_CODE_VALUES } from "@shared/property-codes";
+import { PROPERTY_CODE_VALUES, PROPERTY_CODE_LABEL } from "@shared/property-codes";
 import { matchAddressToPropertyCode } from "../parsers/address-match.js";
 import { requireAuth, requireContributor, requireAdmin } from "../middleware/auth.js";
 import { logAudit, logFieldChanges } from "../audit.js";
@@ -43,7 +43,97 @@ const upsertSchema = z.object({
   monthlyPaymentFixed: numStr,
   status: z.enum(["Active", "Redeemed", "Pending"]).default("Active"),
   notes: z.string().nullable().optional(),
+
+  // ── Property-register fields (live on portfolio_properties) ─────────────
+  // Folded into the mortgage edit so one Save updates both tables. The
+  // server upserts the portfolio row keyed off propertyCode, creating one
+  // if it doesn't exist (using PROPERTY_CODE_LABEL[code] as the seed
+  // address so matchAddressToPropertyCode round-trips correctly).
+  address: z.string().nullable().optional(),
+  postcode: z.string().nullable().optional(),
+  lettingUnits: z.string().nullable().optional(),
+  purchaseDate: z.string().nullable().optional(),
+  purchasePrice: numStr,
+  capitalCosts: numStr,
+  currentValueRics: numStr,
+  ricsDate: z.string().nullable().optional(),
+  currentValueLatent: numStr,
+  grossAnnualRent: numStr,
 });
+
+// Splits a parsed body into the mortgage half and the property-register
+// half. Used by POST + PATCH so they share the same upsert logic.
+function splitProperty<T extends Record<string, unknown>>(data: T) {
+  const propertyKeys = [
+    "address",
+    "postcode",
+    "lettingUnits",
+    "purchaseDate",
+    "purchasePrice",
+    "capitalCosts",
+    "currentValueRics",
+    "ricsDate",
+    "currentValueLatent",
+    "grossAnnualRent",
+  ] as const;
+  const property: Record<string, unknown> = {};
+  const mortgage: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if ((propertyKeys as readonly string[]).includes(k)) property[k] = v;
+    else mortgage[k] = v;
+  }
+  return { mortgage, property };
+}
+
+// Find existing portfolio_properties row for a property code, or null if
+// none yet exists. Same matcher logic as the GET enrichment.
+async function findPortfolioRowForCode(code: string) {
+  const all = await db.select().from(portfolioProperties);
+  for (const p of all) {
+    if (matchAddressToPropertyCode(p.address) === code) return p;
+  }
+  return null;
+}
+
+// Upserts portfolio_properties for the given property code. Patch object
+// only contains keys the caller set — undefined values are skipped, so
+// the form's "didn't touch this field" semantics are preserved.
+async function upsertPortfolioForCode(
+  code: string,
+  patch: Record<string, unknown>
+) {
+  // Drop undefined keys (these are fields the form didn't include or sent
+  // as undefined). Empty strings and explicit nulls are kept and clear
+  // the value.
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    clean[k] = v;
+  }
+  // If the patch is empty there's nothing to do.
+  if (Object.keys(clean).length === 0) return;
+
+  const existing = await findPortfolioRowForCode(code);
+  if (existing) {
+    await db
+      .update(portfolioProperties)
+      .set({ ...clean, updatedAt: sql`now()` })
+      .where(eq(portfolioProperties.id, existing.id));
+    return;
+  }
+  // No row yet — create one. Address defaults to the canonical label so
+  // matchAddressToPropertyCode round-trips. Address from the patch (if
+  // user typed one) wins.
+  const seedAddress =
+    (clean.address as string | undefined) ||
+    PROPERTY_CODE_LABEL[code] ||
+    code;
+  await db.insert(portfolioProperties).values({
+    address: seedAddress,
+    ...clean,
+    updatedAt: sql`now()`,
+  });
+}
 
 // Enriches each mortgage with property-level valuation data via JOIN on
 // property_code. Leasehold flats (26BLA/B/C, 27BLA-D) currently have no
@@ -110,10 +200,12 @@ router.post("/", requireContributor, async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
+  const { mortgage, property } = splitProperty(parsed.data);
   const [row] = await db
     .insert(mortgages)
-    .values({ ...parsed.data, updatedAt: sql`now()` })
+    .values({ ...(mortgage as typeof parsed.data), updatedAt: sql`now()` })
     .returning();
+  await upsertPortfolioForCode(row.propertyCode, property);
   await logAudit({
     userId: req.user!.id,
     userName: req.user!.username,
@@ -134,13 +226,16 @@ router.patch("/:id", requireContributor, async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
+  const { mortgage, property } = splitProperty(parsed.data);
   const [existing] = await db.select().from(mortgages).where(eq(mortgages.id, id));
   if (!existing) return res.status(404).json({ error: "Not found" });
   const [updated] = await db
     .update(mortgages)
-    .set({ ...parsed.data, updatedAt: sql`now()` })
+    .set({ ...mortgage, updatedAt: sql`now()` })
     .where(eq(mortgages.id, id))
     .returning();
+  // Use the mortgage's propertyCode (post-update, in case the form changed it).
+  await upsertPortfolioForCode(updated.propertyCode, property);
   await logFieldChanges(
     {
       userId: req.user!.id,
@@ -148,10 +243,10 @@ router.patch("/:id", requireContributor, async (req, res) => {
       entity: "mortgages",
       entityId: id,
     },
-    Object.keys(parsed.data).map((f) => ({
+    Object.keys(mortgage).map((f) => ({
       field: f,
       oldValue: (existing as never)[f] ?? null,
-      newValue: (parsed.data as never)[f] ?? null,
+      newValue: (mortgage as never)[f] ?? null,
     }))
   );
   res.json(updated);
