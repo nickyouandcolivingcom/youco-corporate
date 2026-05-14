@@ -1056,7 +1056,12 @@ export default function MortgagesPage() {
   }, [portfolio]);
 
   const kpis = useMemo(() => {
-    const totalLatentValue = portfolioTotals.latent;
+    // KPIs are calculated from the visible mortgage rows so they always tie
+    // back to the table TOTALS row. Previously these used portfolio-wide
+    // sums (which include freeholds without mortgages), causing the KPI to
+    // disagree with the footer. Now: change a Latent value in a cell and
+    // both the footer and the KPI move together.
+    const totalLatentValue = totals.latent;
     const totalDebt = totals.loan;
     // Total annual interest is monthly × 12 for IO loans (the dominant case);
     // a few rows may be Repayment which would over-state slightly until
@@ -1068,9 +1073,9 @@ export default function MortgagesPage() {
     );
     const avgLtv = totalLatentValue > 0 ? totalDebt / totalLatentValue : 0;
     const avgRate = totalDebt > 0 ? totalAnnualInterest / totalDebt : 0;
-    const avgYield = totalLatentValue > 0 ? portfolioTotals.grossRent / totalLatentValue : 0;
+    const avgYield = totalLatentValue > 0 ? totals.rent / totalLatentValue : 0;
     return { totalLatentValue, totalDebt, avgLtv, avgRate, avgYield };
-  }, [sorted, totals, portfolioTotals]);
+  }, [sorted, totals]);
 
   // Mortgages with refi date in the next 12 months
   const upcomingRefi = useMemo(() => {
@@ -1179,8 +1184,8 @@ export default function MortgagesPage() {
       </div>
       <p className="text-xs text-gray-500">
         <strong className="text-gray-900">{sorted.length}</strong> mortgages.
-        Yields and LTV use Latent Value across all portfolio properties; add
-        leasehold flats to /portfolio to make those accurate.
+        KPI strip ties to the table totals row — every cell edit recomputes
+        Latent, Debt, Avg LTV and Avg Yield in lock-step.
       </p>
 
       {upcomingRefi.length > 0 && (
