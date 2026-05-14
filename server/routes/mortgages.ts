@@ -63,6 +63,17 @@ const upsertSchema = z.object({
   reversionaryMarginPct: numStr,
   reversionaryFloorPct: numStr,
   monthlyPaymentFixed: numStr,
+  // ERC schedule as Y1–Y5 tier list. Stored as JSONB. Zod was silently
+  // stripping this before — every PATCH that touched ercSchedule (incl.
+  // the new inline cell) was a no-op until we added it here.
+  ercSchedule: z
+    .array(z.object({ year: z.number().int(), pct: z.number() }))
+    .nullable()
+    .optional(),
+  productFee: numStr,
+  valuationFee: numStr,
+  legalFee: numStr,
+  redemptionFee: numStr,
   status: z.enum(["Active", "Redeemed", "Pending"]).default("Active"),
   notes: z.string().nullable().optional(),
 
