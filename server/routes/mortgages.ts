@@ -78,11 +78,19 @@ router.get("/", requireAuth, async (req, res) => {
 
   const enriched = baseRows.map((m) => {
     const p = portfolioByCode[m.propertyCode] ?? null;
+    // RICS fallback: a mortgage offer's `valuation` is always a RICS-backed
+    // figure from the lender's surveyor, so if we have no portfolio
+    // currentValueRics yet (e.g. leasehold flats 26BLA/B/C not registered),
+    // we surface the mortgage valuation as the RICS so summary == detail.
+    // Portfolio value takes precedence when set (it's typically newer than
+    // the original offer valuation).
+    const ricsValue = p?.currentValueRics ?? m.valuation ?? null;
+    const ricsDate = p?.ricsDate ?? m.offerDate ?? null;
     return {
       ...m,
-      ricsValue: p?.currentValueRics ?? null,
+      ricsValue,
       latentValue: p?.currentValueLatent ?? null,
-      ricsDate: p?.ricsDate ?? null,
+      ricsDate,
       // Property register fields — surfaced here so Mortgages page replaces
       // the now-deleted Wealth Statement.
       postcode: p?.postcode ?? null,
