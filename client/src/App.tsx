@@ -2,11 +2,10 @@ import { Switch, Route, Redirect } from "wouter";
 import { useUser } from "@/hooks/useAuth";
 import LoginPage from "@/pages/login";
 import Layout from "@/components/Layout";
+import DashboardPage from "@/pages/dashboard/Dashboard";
 import SuppliersContactsPage from "@/pages/suppliers/Contacts";
-import PortfolioPage from "@/pages/portfolio/Portfolio";
 import EnergyPage from "@/pages/energy/Energy";
 import EnergyInvoicesPage from "@/pages/energy/Invoices";
-import EnergySyncPage from "@/pages/energy/Sync";
 import EnergyAnalyticsPage from "@/pages/energy/Analytics";
 import WaterAccountsPage from "@/pages/water/Accounts";
 import WaterInvoicesPage from "@/pages/water/Invoices";
@@ -14,7 +13,7 @@ import MortgagesPage from "@/pages/mortgages/Loans";
 import BroadbandAccountsPage from "@/pages/broadband/Accounts";
 import DocsListPage from "@/pages/docs/List";
 import DocViewPage from "@/pages/docs/View";
-import ComingSoon from "@/pages/ComingSoon";
+import SettingsPage from "@/pages/settings/Settings";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useUser();
@@ -35,21 +34,36 @@ function AppRoutes() {
   return (
     <Switch>
       <Route path="/">
-        <Redirect to="/portfolio" />
+        <Redirect to="/dashboard" />
       </Route>
-      <Route path="/portfolio">
-        <Layout title="Wealth Statement">
-          <PortfolioPage />
+
+      {/* DASHBOARD */}
+      <Route path="/dashboard">
+        <Layout title="Dashboard">
+          <DashboardPage />
+        </Layout>
+      </Route>
+
+      {/* SUPPLIER MGT */}
+      <Route path="/suppliers">
+        <Layout title="Suppliers">
+          <SuppliersContactsPage />
         </Layout>
       </Route>
       <Route path="/suppliers/contacts">
-        <Layout title="Supplier Contacts">
-          <SuppliersContactsPage />
-        </Layout>
+        <Redirect to="/suppliers" />
       </Route>
       <Route path="/mortgages">
         <Layout title="Mortgages">
           <MortgagesPage />
+        </Layout>
+      </Route>
+
+      {/* Energy — single page now shows Analytics. Sub-routes (invoices,
+          legacy accounts) stay accessible until Phase C rebuild. */}
+      <Route path="/energy">
+        <Layout title="Energy">
+          <EnergyAnalyticsPage />
         </Layout>
       </Route>
       <Route path="/energy/invoices">
@@ -58,18 +72,21 @@ function AppRoutes() {
         </Layout>
       </Route>
       <Route path="/energy/analytics">
-        <Layout title="Energy Analytics">
-          <EnergyAnalyticsPage />
+        <Redirect to="/energy" />
+      </Route>
+      <Route path="/energy/accounts">
+        <Layout title="Energy Accounts (legacy)">
+          <EnergyPage />
         </Layout>
       </Route>
       <Route path="/energy/sync">
-        <Layout title="Energy Sync (Octopus)">
-          <EnergySyncPage />
-        </Layout>
+        <Redirect to="/settings" />
       </Route>
-      <Route path="/energy">
-        <Layout title="Energy Accounts">
-          <EnergyPage />
+
+      {/* Water — single page for now; Phase C rebuilds with 3-section layout. */}
+      <Route path="/water">
+        <Layout title="Water">
+          <WaterAccountsPage />
         </Layout>
       </Route>
       <Route path="/water/invoices">
@@ -77,16 +94,16 @@ function AppRoutes() {
           <WaterInvoicesPage />
         </Layout>
       </Route>
-      <Route path="/water">
-        <Layout title="Water Accounts">
-          <WaterAccountsPage />
-        </Layout>
-      </Route>
+
+      {/* Broadband — unchanged. */}
       <Route path="/broadband">
         <Layout title="Broadband">
           <BroadbandAccountsPage />
         </Layout>
       </Route>
+
+      {/* RULES & DOCS — list at /docs is still the fallback when no doc is
+          selected; individual docs render inline. */}
       <Route path="/docs/:slug">
         <Layout title="Operations Manual">
           <DocViewPage />
@@ -97,8 +114,21 @@ function AppRoutes() {
           <DocsListPage />
         </Layout>
       </Route>
+
+      {/* SETTINGS */}
+      <Route path="/settings">
+        <Layout title="Settings">
+          <SettingsPage />
+        </Layout>
+      </Route>
+
+      {/* Old /portfolio shortcut → Dashboard (Wealth Statement removed). */}
+      <Route path="/portfolio">
+        <Redirect to="/dashboard" />
+      </Route>
+
       <Route>
-        <Redirect to="/portfolio" />
+        <Redirect to="/dashboard" />
       </Route>
     </Switch>
   );

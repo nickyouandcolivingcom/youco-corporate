@@ -1,19 +1,20 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useUser, useLogout } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import {
-  ContactRound,
   LogOut,
-  Building2,
+  LayoutDashboard,
+  ContactRound,
   Landmark,
   Zap,
-  FileText,
-  RefreshCw,
-  TrendingUp,
   Droplets,
   Wifi,
   BookOpen,
+  Settings as SettingsIcon,
+  FileText,
 } from "lucide-react";
+import type { Doc } from "@shared/schema";
 
 interface NavItem {
   label: string;
@@ -22,54 +23,29 @@ interface NavItem {
   exact?: boolean;
 }
 
-const NAV: Array<{ section: string; items: NavItem[] }> = [
+const STATIC_NAV: Array<{ section: string; items: NavItem[] }> = [
   {
-    section: "PORTFOLIO",
+    section: "DASHBOARD",
     items: [
-      { label: "Wealth Statement", href: "/portfolio", icon: <Building2 size={16} /> },
+      { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard size={16} />, exact: true },
     ],
   },
   {
-    section: "SUPPLIERS",
+    section: "SUPPLIER MGT",
     items: [
-      { label: "Contacts", href: "/suppliers/contacts", icon: <ContactRound size={16} /> },
-    ],
-  },
-  {
-    section: "MORTGAGES",
-    items: [
-      { label: "Loans", href: "/mortgages", icon: <Landmark size={16} />, exact: true },
-    ],
-  },
-  {
-    section: "ENERGY",
-    items: [
-      { label: "Accounts", href: "/energy", icon: <Zap size={16} />, exact: true },
-      { label: "Invoices", href: "/energy/invoices", icon: <FileText size={16} /> },
-      { label: "Analytics", href: "/energy/analytics", icon: <TrendingUp size={16} /> },
-      { label: "Sync (Octopus)", href: "/energy/sync", icon: <RefreshCw size={16} /> },
-    ],
-  },
-  {
-    section: "WATER",
-    items: [
-      { label: "Accounts", href: "/water", icon: <Droplets size={16} />, exact: true },
-      { label: "Invoices", href: "/water/invoices", icon: <FileText size={16} /> },
-    ],
-  },
-  {
-    section: "BROADBAND",
-    items: [
-      { label: "Accounts", href: "/broadband", icon: <Wifi size={16} /> },
-    ],
-  },
-  {
-    section: "RULES & DOCS",
-    items: [
-      { label: "Operations Manual", href: "/docs", icon: <BookOpen size={16} /> },
+      { label: "Suppliers", href: "/suppliers", icon: <ContactRound size={16} />, exact: true },
+      { label: "Mortgages", href: "/mortgages", icon: <Landmark size={16} />, exact: true },
+      { label: "Energy", href: "/energy", icon: <Zap size={16} />, exact: true },
+      { label: "Water", href: "/water", icon: <Droplets size={16} />, exact: true },
+      { label: "Broadband", href: "/broadband", icon: <Wifi size={16} />, exact: true },
     ],
   },
 ];
+
+const SETTINGS_NAV: { section: string; items: NavItem[] } = {
+  section: "SETTINGS",
+  items: [{ label: "Settings", href: "/settings", icon: <SettingsIcon size={16} />, exact: true }],
+};
 
 function isActive(location: string, item: NavItem): boolean {
   if (item.exact) return location === item.href;
@@ -93,10 +69,43 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+// Pulls the docs list so each doc renders as its own nav item under RULES & DOCS,
+// avoiding a redundant "Operations Manual" landing page.
+function useDocsNav() {
+  return useQuery<Doc[]>({
+    queryKey: ["/api/docs"],
+    queryFn: async () => {
+      const res = await fetch("/api/docs", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+}
+
 export default function Sidebar() {
   const [location] = useLocation();
   const { data: user } = useUser();
   const logout = useLogout();
+  const { data: docs = [] } = useDocsNav();
+
+  // Sort docs by category then sortOrder, exposed as one nav item each.
+  const sortedDocs = [...docs].sort((a, b) => {
+    const cat = a.category.localeCompare(b.category);
+    if (cat !== 0) return cat;
+    return a.sortOrder - b.sortOrder;
+  });
+
+  const docsSection: { section: string; items: NavItem[] } = {
+    section: "RULES & DOCS",
+    items: sortedDocs.map((d) => ({
+      label: d.title,
+      href: `/docs/${d.slug}`,
+      icon: <FileText size={16} />,
+    })),
+  };
+
+  const nav = [...STATIC_NAV, docsSection, SETTINGS_NAV];
 
   return (
     <aside className="w-56 min-h-screen bg-youco-blue flex flex-col flex-shrink-0">
@@ -110,14 +119,18 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ section, items }) => (
+        {nav.map(({ section, items }) => (
           <div key={section}>
             <p className="px-3 pt-4 pb-1 text-xs font-semibold tracking-widest text-white/40 uppercase">
               {section}
             </p>
-            {items.map((item) => (
-              <NavLink key={item.href} item={item} active={isActive(location, item)} />
-            ))}
+            {items.length === 0 ? (
+              <p className="px-3 py-1.5 text-xs text-white/30 italic">No items yet</p>
+            ) : (
+              items.map((item) => (
+                <NavLink key={item.href} item={item} active={isActive(location, item)} />
+              ))
+            )}
           </div>
         ))}
       </nav>
