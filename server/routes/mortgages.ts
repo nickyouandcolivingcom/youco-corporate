@@ -4,7 +4,29 @@ import { z } from "zod";
 import pdfParseLib from "pdf-parse";
 import { db } from "../db.js";
 import { mortgages, portfolioProperties } from "@shared/schema";
-import { PROPERTY_CODE_VALUES, PROPERTY_CODE_LABEL } from "@shared/property-codes";
+import { PROPERTY_CODE_VALUES } from "@shared/property-codes";
+
+// Seed addresses chosen so each round-trips through matchAddressToPropertyCode.
+// PROPERTY_CODE_LABEL strings ("26BLA — 26 Brook Lane Flat A") don't match the
+// "FLATA26BROOKLANE" or "26ABROOKLANE" patterns because of the leading code.
+const SEED_ADDRESS_FOR_CODE: Record<string, string> = {
+  CORP: "Corporate",
+  "16RC": "16 Richmond Crescent",
+  "10KG": "10 Kensington Green",
+  "32LFR": "32 Lower Field Road",
+  "84DD": "84 Dicksons Drive",
+  "4WS": "4 Walpole Street",
+  "26BL": "26 Brook Lane",
+  "26BLA": "Flat A 26 Brook Lane",
+  "26BLB": "Flat B 26 Brook Lane",
+  "26BLC": "Flat C 26 Brook Lane",
+  "27BL": "27 Brook Lane",
+  "27BLA": "Flat A 27 Brook Lane",
+  "27BLB": "Flat B 27 Brook Lane",
+  "27BLC": "Flat C 27 Brook Lane",
+  "27BLD": "Flat D 27 Brook Lane",
+  "26-27BL": "Brook Lane communal",
+};
 import { matchAddressToPropertyCode } from "../parsers/address-match.js";
 import { requireAuth, requireContributor, requireAdmin } from "../middleware/auth.js";
 import { logAudit, logFieldChanges } from "../audit.js";
@@ -102,32 +124,38 @@ async function upsertPortfolioForCode(
   code: string,
   patch: Record<string, unknown>
 ) {
-  // Drop undefined keys (these are fields the form didn't include or sent
-  // as undefined). Empty strings and explicit nulls are kept and clear
-  // the value.
+  // Drop undefined keys (form fields the user didn't touch). Empty strings
+  // and explicit nulls are kept so the user can clear a value.
   const clean: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     clean[k] = v;
   }
-  // If the patch is empty there's nothing to do.
   if (Object.keys(clean).length === 0) return;
 
   const existing = await findPortfolioRowForCode(code);
   if (existing) {
+    // Never let the user blank out the address — it's the join key. If the
+    // form sent address: null (blank field, existing row), drop it from the
+    // patch so the existing address is preserved.
+    if (clean.address === null || clean.address === "") delete clean.address;
     await db
       .update(portfolioProperties)
       .set({ ...clean, updatedAt: sql`now()` })
       .where(eq(portfolioProperties.id, existing.id));
     return;
   }
-  // No row yet — create one. Address defaults to the canonical label so
-  // matchAddressToPropertyCode round-trips. Address from the patch (if
-  // user typed one) wins.
-  const seedAddress =
-    (clean.address as string | undefined) ||
-    PROPERTY_CODE_LABEL[code] ||
-    code;
+
+  // No row yet — insert. Address from the form wins; otherwise use a seed
+  // that the matcher can round-trip back to this code.
+  const formAddress =
+    typeof clean.address === "string" && clean.address.trim() !== ""
+      ? (clean.address as string)
+      : undefined;
+  const seedAddress = formAddress ?? SEED_ADDRESS_FOR_CODE[code] ?? code;
+  // Remove address from clean so the explicit `address: seedAddress` below
+  // isn't overwritten by the spread.
+  delete clean.address;
   await db.insert(portfolioProperties).values({
     address: seedAddress,
     ...clean,
