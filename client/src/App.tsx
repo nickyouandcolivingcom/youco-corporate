@@ -3,6 +3,7 @@ import { useUser } from "@/hooks/useAuth";
 import LoginPage from "@/pages/login";
 import Layout from "@/components/Layout";
 import DashboardPage from "@/pages/dashboard/Dashboard";
+import PortfolioPage from "@/pages/portfolio/Portfolio";
 import SuppliersContactsPage from "@/pages/suppliers/Contacts";
 import EnergyPage from "@/pages/energy/Energy";
 import EnergyInvoicesPage from "@/pages/energy/Invoices";
@@ -122,9 +123,17 @@ function AppRoutes() {
         </Layout>
       </Route>
 
-      {/* Old /portfolio shortcut → Dashboard (Wealth Statement removed). */}
+      {/* Hidden data-entry surface for portfolio_properties (postcode, RICS,
+          purchase date etc). Not in sidebar — reached via the "Edit property
+          data" link on /mortgages. Wealth Statement table is the same data,
+          just no longer surfaced as a top-level page. */}
+      <Route path="/properties">
+        <Layout title="Property Register">
+          <PortfolioPage />
+        </Layout>
+      </Route>
       <Route path="/portfolio">
-        <Redirect to="/dashboard" />
+        <Redirect to="/properties" />
       </Route>
 
       <Route>

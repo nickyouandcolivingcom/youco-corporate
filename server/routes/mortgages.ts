@@ -83,6 +83,14 @@ router.get("/", requireAuth, async (req, res) => {
       ricsValue: p?.currentValueRics ?? null,
       latentValue: p?.currentValueLatent ?? null,
       ricsDate: p?.ricsDate ?? null,
+      // Property register fields — surfaced here so Mortgages page replaces
+      // the now-deleted Wealth Statement.
+      postcode: p?.postcode ?? null,
+      purchaseDate: p?.purchaseDate ?? null,
+      purchasePrice: p?.purchasePrice ?? null,
+      capitalCosts: p?.capitalCosts ?? null,
+      grossAnnualRent: p?.grossAnnualRent ?? null,
+      lettingUnits: p?.lettingUnits ?? null,
     };
   });
 

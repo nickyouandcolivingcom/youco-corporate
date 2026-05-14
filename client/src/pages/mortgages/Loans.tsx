@@ -586,8 +586,12 @@ export default function MortgagesPage() {
       "latentValue",
       "equityRics",
       "equityLatent",
+      "purchasePrice",
+      "capitalCosts",
+      "grossAnnualRent",
+      "lettingUnits",
     ];
-    const dateKeys: SortKey[] = ["offerDate", "fixedEndDate", "ricsDate"];
+    const dateKeys: SortKey[] = ["offerDate", "fixedEndDate", "ricsDate", "purchaseDate"];
     return [...rows].sort((a, b) => {
       const av =
         sortKey === "equityRics"
@@ -621,11 +625,17 @@ export default function MortgagesPage() {
     const rics = sorted.reduce((a, r) => a + Number(r.ricsValue ?? 0), 0);
     const latent = sorted.reduce((a, r) => a + Number(r.latentValue ?? 0), 0);
     const monthly = sorted.reduce((a, r) => a + Number(r.monthlyPaymentFixed ?? 0), 0);
+    const purchasePrice = sorted.reduce((a, r) => a + Number(r.purchasePrice ?? 0), 0);
+    const capitalCosts = sorted.reduce((a, r) => a + Number(r.capitalCosts ?? 0), 0);
+    const rent = sorted.reduce((a, r) => a + Number(r.grossAnnualRent ?? 0), 0);
     return {
       loan,
       rics,
       latent,
       monthly,
+      purchasePrice,
+      capitalCosts,
+      rent,
       equityRics: rics - loan,
       equityLatent: latent - loan,
     };
@@ -748,9 +758,16 @@ export default function MortgagesPage() {
           <input value={search} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search…" className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-youco-blue/30" />
           {search && <button onClick={() => handleSearchChange("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={12} /></button>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           {canEdit && (
             <>
+              <a
+                href="/properties"
+                className="text-xs text-gray-500 hover:text-youco-blue underline decoration-dotted"
+                title="Edit postcode, purchase date, RICS, latent value, rent, units per property"
+              >
+                Edit property data
+              </a>
               <PdfImportButton />
               <button onClick={() => { setAddForm(EMPTY_FORM); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-youco-blue text-white text-sm rounded hover:opacity-90">
                 <Plus size={14} />
@@ -817,15 +834,21 @@ export default function MortgagesPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <Th label="Property" sortable sk="propertyCode" />
+                <Th label="Postcode" sortable sk="postcode" />
+                <Th label="Units" sortable sk="lettingUnits" className="text-right" />
                 <Th label="Lender" sortable sk="lender" />
                 <Th label="Borrower" sortable sk="borrowerEntity" />
                 <Th label="Account" />
+                <Th label="Purchase Date" sortable sk="purchaseDate" />
+                <Th label="Purchase Price" sortable sk="purchasePrice" className="text-right" />
+                <Th label="Capital Costs" sortable sk="capitalCosts" className="text-right" />
                 <Th label="Latent" sortable sk="latentValue" className="text-right" />
                 <Th label="RICS" sortable sk="ricsValue" className="text-right" />
                 <Th label="RICS Date" sortable sk="ricsDate" />
                 <Th label="Loan" sortable sk="loanAmount" className="text-right" />
                 <Th label="Eq (Latent)" sortable sk="equityLatent" className="text-right" />
                 <Th label="Eq (RICS)" sortable sk="equityRics" className="text-right" />
+                <Th label="Rent (Gross p.a.)" sortable sk="grossAnnualRent" className="text-right" />
                 <Th label="Term" sortable sk="termMonths" />
                 <Th label="Rate" sortable sk="fixedRatePct" />
                 <Th label="Refinancing Date" sortable sk="fixedEndDate" />
@@ -839,6 +862,8 @@ export default function MortgagesPage() {
               {sorted.map((m) => (
                 <tr key={m.id} className="hover:bg-gray-50 group">
                   <td className="px-3 py-2 font-mono text-xs">{m.propertyCode}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-gray-600">{m.postcode ?? "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs">{m.lettingUnits ?? "—"}</td>
                   <td className="px-3 py-2 font-medium text-xs">{m.lender}</td>
                   <td className="px-3 py-2 text-xs">
                     <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", m.borrowerEntity === "MONOCROM" ? "bg-purple-50 text-purple-700" : "bg-gray-100 text-gray-700")}>
@@ -846,6 +871,9 @@ export default function MortgagesPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{m.accountNumber ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.purchaseDate)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.purchasePrice)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.capitalCosts)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.latentValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.ricsValue)}</td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.ricsDate)}</td>
@@ -856,6 +884,7 @@ export default function MortgagesPage() {
                   <td className={cn("px-3 py-2 text-right tabular-nums text-xs", equityFor(m, "rics") != null && equityFor(m, "rics")! < 0 && "text-red-600")}>
                     {fmtMoney(equityFor(m, "rics"))}
                   </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.grossAnnualRent)}</td>
                   <td className="px-3 py-2 text-xs">{fmtTermYears(m.termMonths)}</td>
                   <td className="px-3 py-2 text-xs">{fmtPct(m.fixedRatePct)}</td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.fixedEndDate)}</td>
@@ -888,8 +917,25 @@ export default function MortgagesPage() {
             {sorted.length > 1 && (
               <tfoot className="bg-gray-50 border-t-2 border-gray-300">
                 <tr className="text-xs font-semibold text-gray-700">
-                  <td className="px-3 py-2 uppercase tracking-wide" colSpan={4}>
+                  {/* Property + Postcode = label cells */}
+                  <td className="px-3 py-2 uppercase tracking-wide" colSpan={2}>
                     Totals
+                  </td>
+                  {/* Units */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {sorted.reduce((a, r) => a + Number(r.lettingUnits ?? 0), 0) || "—"}
+                  </td>
+                  {/* Lender, Borrower, Account — no totals */}
+                  <td colSpan={3} />
+                  {/* Purchase Date — no total */}
+                  <td />
+                  {/* Purchase Price */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.purchasePrice)}
+                  </td>
+                  {/* Capital Costs */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.capitalCosts)}
                   </td>
                   {/* Latent */}
                   <td className="px-3 py-2 text-right tabular-nums">
@@ -912,6 +958,10 @@ export default function MortgagesPage() {
                   {/* Eq (RICS) */}
                   <td className={cn("px-3 py-2 text-right tabular-nums", totals.equityRics < 0 && "text-red-600")}>
                     {fmtMoney(totals.equityRics)}
+                  </td>
+                  {/* Rent */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(totals.rent)}
                   </td>
                   {/* Term, Rate, Refi Date, ERC — no totals */}
                   <td colSpan={4} />

@@ -473,6 +473,14 @@ export type MortgageWithPortfolio = Mortgage & {
   ricsValue: string | null;
   latentValue: string | null;
   ricsDate: string | null;
+  // Property-register fields rolled in from portfolio_properties (Phase B —
+  // Wealth Statement page is gone; this is now the single property surface).
+  postcode: string | null;
+  purchaseDate: string | null;
+  purchasePrice: string | null;
+  capitalCosts: string | null;
+  grossAnnualRent: string | null;
+  lettingUnits: string | null;
 };
 
 export type BroadbandAccount = typeof broadbandAccounts.$inferSelect;
