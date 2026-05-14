@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Trash2,
-  Pencil,
   Upload,
   Search,
   X,
@@ -185,6 +184,267 @@ function payload(form: MortgageForm) {
     currentValueLatent: t(form.currentValueLatent),
     grossAnnualRent: t(form.grossAnnualRent),
   };
+}
+
+/** Single-field PATCH for inline editing. Invalidates the table query
+ *  on success so any derived totals (equity, KPI strip) recompute. */
+function useInlineUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      field,
+      value,
+    }: {
+      id: number;
+      field: string;
+      value: string | number | null | Array<{ year: number; pct: number }>;
+    }) => {
+      const res = await apiRequest("PATCH", `/api/mortgages/${id}`, { [field]: value });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Save failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/mortgages"] }),
+  });
+}
+
+type CellType = "text" | "number" | "money" | "percent" | "date" | "select" | "readonly";
+type CellValue = string | number | null;
+type SelectOption = { value: string; label: string };
+
+/** Single-cell inline editor. Click to edit, Enter/blur to save,
+ *  Escape to cancel. Visual states: idle (hover-yellow), editing
+ *  (input), saving (disabled), error (red-50 bg). */
+function EditableCell({
+  rowId,
+  field,
+  value,
+  type,
+  options,
+  className,
+  formatter,
+  placeholder,
+  onSave,
+  textRight,
+  mono,
+  parser,
+}: {
+  rowId: number;
+  field: string;
+  value: string | number | null | undefined;
+  type: CellType;
+  options?: readonly SelectOption[];
+  className?: string;
+  formatter?: (v: string | number | null | undefined) => React.ReactNode;
+  placeholder?: string;
+  textRight?: boolean;
+  mono?: boolean;
+  /** Optional transform from draft string → API value. Default: trim, "" → null. */
+  parser?: (raw: string) => CellValue;
+  onSave: (id: number, field: string, value: CellValue) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const display =
+    formatter !== undefined
+      ? formatter(value)
+      : value === null || value === undefined || value === ""
+        ? "—"
+        : String(value);
+
+  if (type === "readonly") {
+    return <td className={className}>{display}</td>;
+  }
+
+  function start() {
+    setDraft(value == null ? "" : String(value));
+    setEditing(true);
+    setError(null);
+  }
+
+  async function commit() {
+    if (saving) return;
+    const raw = draft;
+    const defaultParser = (r: string): CellValue => {
+      const trimmed = r.trim();
+      if (trimmed === "") return null;
+      if (type === "number") {
+        const n = parseInt(trimmed, 10);
+        return Number.isNaN(n) ? null : n;
+      }
+      return trimmed;
+    };
+    const next = (parser ?? defaultParser)(raw);
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(rowId, field, next);
+      setEditing(false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancel() {
+    setEditing(false);
+    setDraft("");
+    setError(null);
+  }
+
+  if (!editing) {
+    return (
+      <td
+        onClick={start}
+        title={error ?? "Click to edit"}
+        className={cn(
+          className,
+          "cursor-pointer hover:bg-yellow-50/70 transition-colors",
+          error && "bg-red-50"
+        )}
+      >
+        {display}
+      </td>
+    );
+  }
+
+  const inputBase =
+    "w-full border border-youco-blue rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-youco-blue/40 disabled:opacity-50";
+
+  if (type === "select") {
+    return (
+      <td className={cn(className, "p-0.5")}>
+        <select
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") cancel();
+          }}
+          disabled={saving}
+          className={inputBase}
+        >
+          {options?.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </td>
+    );
+  }
+
+  return (
+    <td className={cn(className, "p-0.5")}>
+      <input
+        autoFocus
+        type={type === "date" ? "date" : "text"}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") cancel();
+        }}
+        disabled={saving}
+        placeholder={placeholder}
+        className={cn(inputBase, textRight && "text-right", mono && "font-mono")}
+      />
+    </td>
+  );
+}
+
+/** Special editor for the ERC Y1–Y5 schedule (JSONB array). */
+function EditableErcCell({
+  rowId,
+  value,
+  onSave,
+}: {
+  rowId: number;
+  value: Array<{ year: number; pct: number }> | null | undefined;
+  onSave: (id: number, field: string, value: Array<{ year: number; pct: number }> | null) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<string[]>(["", "", "", "", ""]);
+  const [saving, setSaving] = useState(false);
+
+  function start() {
+    const slots = ["", "", "", "", ""];
+    for (const t of value ?? []) {
+      if (t.year >= 1 && t.year <= 5) slots[t.year - 1] = String(t.pct);
+    }
+    setDrafts(slots);
+    setEditing(true);
+  }
+
+  async function commit() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const schedule: Array<{ year: number; pct: number }> = [];
+      drafts.forEach((d, i) => {
+        const n = Number.parseFloat(d);
+        if (!Number.isNaN(n) && n > 0) schedule.push({ year: i + 1, pct: n });
+      });
+      await onSave(rowId, "ercSchedule", schedule.length > 0 ? schedule : null);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <td
+        onClick={start}
+        title="Click to edit ERC schedule (Y1–Y5)"
+        className="px-3 py-2 text-xs font-mono whitespace-nowrap cursor-pointer hover:bg-yellow-50/70 transition-colors"
+      >
+        {fmtErcCompact(value)}
+      </td>
+    );
+  }
+
+  return (
+    <td className="p-0.5 whitespace-nowrap">
+      <div className="flex items-center gap-0.5">
+        {drafts.map((d, i) => (
+          <input
+            key={i}
+            autoFocus={i === 0}
+            value={d}
+            onChange={(e) =>
+              setDrafts((arr) => arr.map((v, j) => (j === i ? e.target.value : v)))
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            placeholder={`Y${i + 1}`}
+            disabled={saving}
+            className="w-8 border border-youco-blue rounded px-1 py-0.5 text-[10px] text-center font-mono"
+          />
+        ))}
+        <button
+          onClick={commit}
+          disabled={saving}
+          className="ml-1 text-xs px-1 text-youco-blue hover:text-youco-bronze"
+          title="Save"
+        >
+          ✓
+        </button>
+      </div>
+    </td>
+  );
 }
 
 function useMortgages(search: string) {
@@ -689,10 +949,10 @@ export default function MortgagesPage() {
   const [sortKey, setSortKey] = useState<SortKey>("propertyCode");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const [editing, setEditing] = useState<MortgageWithPortfolio | null>(null);
+  // editing state removed — inline editing per cell. Add modal stays so we
+  // have one place to create a brand-new mortgage row.
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState<MortgageForm>(EMPTY_FORM);
-  const [editForm, setEditForm] = useState<MortgageForm>(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const { data: rows = [], isLoading, error } = useMortgages(debouncedSearch);
@@ -826,6 +1086,17 @@ export default function MortgagesPage() {
   const createMut = useCreate();
   const updateMut = useUpdate();
   const deleteMut = useDelete();
+  const inlineMut = useInlineUpdate();
+
+  // Single onSave passed to every EditableCell — wraps the mutation so each
+  // cell can await it and surface errors without owning mutation state.
+  async function saveCell(
+    id: number,
+    field: string,
+    value: string | number | null | Array<{ year: number; pct: number }>
+  ) {
+    await inlineMut.mutateAsync({ id, field, value });
+  }
 
   function handleSearchChange(v: string) {
     setSearch(v);
@@ -841,48 +1112,7 @@ export default function MortgagesPage() {
     }
   }
 
-  function openEdit(m: MortgageWithPortfolio) {
-    setEditing(m);
-    setEditForm({
-      lender: m.lender,
-      propertyCode: m.propertyCode,
-      borrowerEntity: (m.borrowerEntity as "YCO" | "MONOCROM") ?? "YCO",
-      accountNumber: m.accountNumber ?? "",
-      lenderReference: m.lenderReference ?? "",
-      offerDate: m.offerDate ?? "",
-      expiryDate: m.expiryDate ?? "",
-      loanAmount: m.loanAmount ?? "",
-      valuation: m.valuation ?? "",
-      termMonths: m.termMonths != null ? String(m.termMonths) : "",
-      repaymentType: m.repaymentType ?? "Interest Only",
-      fixedRatePct: m.fixedRatePct ?? "",
-      fixedPeriodMonths: m.fixedPeriodMonths != null ? String(m.fixedPeriodMonths) : "",
-      fixedEndDate: m.fixedEndDate ?? "",
-      reversionaryMarginPct: m.reversionaryMarginPct ?? "",
-      reversionaryFloorPct: m.reversionaryFloorPct ?? "",
-      monthlyPaymentFixed: m.monthlyPaymentFixed ?? "",
-      ercSchedule: m.ercSchedule ?? [],
-      productFee: m.productFee ?? "",
-      valuationFee: m.valuationFee ?? "",
-      legalFee: m.legalFee ?? "",
-      redemptionFee: m.redemptionFee ?? "",
-      status: (m.status as MortgageForm["status"]) ?? "Active",
-      notes: m.notes ?? "",
-      // Address is not surfaced on the enriched row (server doesn't return
-      // portfolio_properties.address, just the joined fields). Leave blank —
-      // server will keep the existing address if the row exists.
-      address: "",
-      postcode: m.postcode ?? "",
-      lettingUnits: m.lettingUnits ?? "",
-      purchaseDate: m.purchaseDate ?? "",
-      purchasePrice: m.purchasePrice ?? "",
-      capitalCosts: m.capitalCosts ?? "",
-      currentValueRics: m.ricsValue ?? "",
-      ricsDate: m.ricsDate ?? "",
-      currentValueLatent: m.latentValue ?? "",
-      grossAnnualRent: m.grossAnnualRent ?? "",
-    });
-  }
+  // openEdit removed: every cell is now inline-editable.
 
   function Th({ label, sortable, sk, className }: { label: string; sortable?: boolean; sk?: SortKey; className?: string }) {
     const active = sk && sortKey === sk;
@@ -914,13 +1144,9 @@ export default function MortgagesPage() {
         <div className="flex gap-2 items-center">
           {canEdit && (
             <>
-              <a
-                href="/properties"
-                className="text-xs text-gray-500 hover:text-youco-blue underline decoration-dotted"
-                title="Edit postcode, purchase date, RICS, latent value, rent, units per property"
-              >
-                Edit property data
-              </a>
+              <span className="text-[11px] text-gray-400 italic" title="Tip">
+                Click any cell to edit · Enter saves · Esc cancels
+              </span>
               <PdfImportButton />
               <button onClick={() => { setAddForm(EMPTY_FORM); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-youco-blue text-white text-sm rounded hover:opacity-90">
                 <Plus size={14} />
@@ -1008,59 +1234,79 @@ export default function MortgagesPage() {
                 <Th label="ERC (Y1-5)" />
                 <Th label="Monthly" sortable sk="monthlyPaymentFixed" className="text-right" />
                 <Th label="Status" sortable sk="status" />
-                {canEdit && <Th label="" className="w-16" />}
+                {canEdit && isAdmin && <Th label="" className="w-16" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {sorted.map((m) => (
                 <tr key={m.id} className="hover:bg-gray-50 group">
+                  {/* Property — readonly. Changing this would re-key the row;
+                      use Delete + Add Mortgage if you genuinely need to. */}
                   <td className="px-3 py-2 font-mono text-xs">{m.propertyCode}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-gray-600">{m.postcode ?? "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{m.lettingUnits ?? "—"}</td>
-                  <td className="px-3 py-2 font-medium text-xs">{m.lender}</td>
-                  <td className="px-3 py-2 text-xs">
-                    <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", m.borrowerEntity === "MONOCROM" ? "bg-purple-50 text-purple-700" : "bg-gray-100 text-gray-700")}>
-                      {m.borrowerEntity}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">{m.accountNumber ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.purchaseDate)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.purchasePrice)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.capitalCosts)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.latentValue)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.ricsValue)}</td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.ricsDate)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(m.loanAmount)}</td>
+                  <EditableCell rowId={m.id} field="postcode" value={m.postcode} type="text" onSave={saveCell}
+                    className="px-3 py-2 font-mono text-xs text-gray-600" mono placeholder="CH2 2AP" />
+                  <EditableCell rowId={m.id} field="lettingUnits" value={m.lettingUnits} type="text" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight />
+                  <EditableCell rowId={m.id} field="lender" value={m.lender} type="text" onSave={saveCell}
+                    className="px-3 py-2 font-medium text-xs" />
+                  <EditableCell rowId={m.id} field="borrowerEntity" value={m.borrowerEntity} type="select"
+                    options={[{value:"YCO",label:"YCO"},{value:"MONOCROM",label:"MONOCROM"}]}
+                    onSave={saveCell}
+                    className="px-3 py-2 text-xs"
+                    formatter={(v) => (
+                      <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", v === "MONOCROM" ? "bg-purple-50 text-purple-700" : "bg-gray-100 text-gray-700")}>
+                        {v ?? "—"}
+                      </span>
+                    )} />
+                  <EditableCell rowId={m.id} field="accountNumber" value={m.accountNumber} type="text" onSave={saveCell}
+                    className="px-3 py-2 font-mono text-xs" mono />
+                  <EditableCell rowId={m.id} field="purchaseDate" value={m.purchaseDate} type="date" onSave={saveCell}
+                    className="px-3 py-2 text-xs whitespace-nowrap" formatter={(v) => fmtDate(v as string | null)} />
+                  <EditableCell rowId={m.id} field="purchasePrice" value={m.purchasePrice} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  <EditableCell rowId={m.id} field="capitalCosts" value={m.capitalCosts} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  <EditableCell rowId={m.id} field="currentValueLatent" value={m.latentValue} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  <EditableCell rowId={m.id} field="currentValueRics" value={m.ricsValue} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  <EditableCell rowId={m.id} field="ricsDate" value={m.ricsDate} type="date" onSave={saveCell}
+                    className="px-3 py-2 text-xs whitespace-nowrap" formatter={(v) => fmtDate(v as string | null)} />
+                  <EditableCell rowId={m.id} field="loanAmount" value={m.loanAmount} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  {/* Equity columns — computed, readonly. */}
                   <td className={cn("px-3 py-2 text-right tabular-nums text-xs", equityFor(m, "latent") != null && equityFor(m, "latent")! < 0 && "text-red-600")}>
                     {fmtMoney(equityFor(m, "latent"))}
                   </td>
                   <td className={cn("px-3 py-2 text-right tabular-nums text-xs", equityFor(m, "rics") != null && equityFor(m, "rics")! < 0 && "text-red-600")}>
                     {fmtMoney(equityFor(m, "rics"))}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.grossAnnualRent)}</td>
-                  <td className="px-3 py-2 text-xs">{fmtTermYears(m.termMonths)}</td>
-                  <td className="px-3 py-2 text-xs">{fmtPct(m.fixedRatePct)}</td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(m.fixedEndDate)}</td>
-                  <td className="px-3 py-2 text-xs font-mono whitespace-nowrap" title="ERC % per year (year 1 → year 5)">
-                    {fmtErcCompact(m.ercSchedule)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-xs">{fmtMoney(m.monthlyPaymentFixed)}</td>
-                  <td className="px-3 py-2">
-                    <span className={cn("inline-flex px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset", STATUS_BADGE[m.status] ?? STATUS_BADGE.Active)}>
-                      {m.status}
-                    </span>
-                  </td>
-                  {canEdit && (
+                  <EditableCell rowId={m.id} field="grossAnnualRent" value={m.grossAnnualRent} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  <EditableCell rowId={m.id} field="termMonths" value={m.termMonths} type="number" onSave={saveCell}
+                    className="px-3 py-2 text-xs" formatter={(v) => fmtTermYears(v as number | null)} placeholder="months" />
+                  <EditableCell rowId={m.id} field="fixedRatePct" value={m.fixedRatePct} type="percent" onSave={saveCell}
+                    className="px-3 py-2 text-xs" formatter={(v) => fmtPct(v as string | null)} />
+                  <EditableCell rowId={m.id} field="fixedEndDate" value={m.fixedEndDate} type="date" onSave={saveCell}
+                    className="px-3 py-2 text-xs whitespace-nowrap" formatter={(v) => fmtDate(v as string | null)} />
+                  <EditableErcCell rowId={m.id} value={m.ercSchedule} onSave={saveCell} />
+                  <EditableCell rowId={m.id} field="monthlyPaymentFixed" value={m.monthlyPaymentFixed} type="money" onSave={saveCell}
+                    className="px-3 py-2 text-right tabular-nums text-xs" textRight formatter={(v) => fmtMoney(v as string | null)} />
+                  <EditableCell rowId={m.id} field="status" value={m.status} type="select"
+                    options={[{value:"Active",label:"Active"},{value:"Redeemed",label:"Redeemed"},{value:"Pending",label:"Pending"}]}
+                    onSave={saveCell}
+                    className="px-3 py-2"
+                    formatter={(v) => (
+                      <span className={cn("inline-flex px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset", STATUS_BADGE[v as string] ?? STATUS_BADGE.Active)}>
+                        {v ?? "—"}
+                      </span>
+                    )} />
+                  {canEdit && isAdmin && (
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => openEdit(m)} title="Edit" className="p-1 text-gray-400 hover:text-youco-blue rounded">
-                          <Pencil size={13} />
+                        <button onClick={() => setDeleteId(m.id)} title="Delete mortgage" className="p-1 text-gray-400 hover:text-red-500 rounded">
+                          <Trash2 size={13} />
                         </button>
-                        {isAdmin && (
-                          <button onClick={() => setDeleteId(m.id)} title="Delete" className="p-1 text-gray-400 hover:text-red-500 rounded">
-                            <Trash2 size={13} />
-                          </button>
-                        )}
                       </div>
                     </td>
                   )}
@@ -1122,8 +1368,8 @@ export default function MortgagesPage() {
                   <td className="px-3 py-2 text-right tabular-nums">
                     {fmtMoney(totals.monthly)}
                   </td>
-                  {/* Status + (action col when canEdit) */}
-                  <td colSpan={canEdit ? 2 : 1} />
+                  {/* Status + (action col only for admins now) */}
+                  <td colSpan={canEdit && isAdmin ? 2 : 1} />
                 </tr>
               </tfoot>
             )}
@@ -1151,18 +1397,8 @@ export default function MortgagesPage() {
         </Modal>
       )}
 
-      {editing && (
-        <Modal title="Edit Mortgage" onClose={() => setEditing(null)} size="xl">
-          <FormFields form={editForm} setForm={setEditForm} />
-          {updateMut.error && <p className="mt-3 text-sm text-red-500">{updateMut.error.message}</p>}
-          <div className="mt-4 flex justify-end gap-2">
-            <button onClick={() => setEditing(null)} className="px-4 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
-            <button disabled={updateMut.isPending} onClick={async () => { await updateMut.mutateAsync({ id: editing.id, data: editForm }); setEditing(null); }} className="px-4 py-1.5 text-sm bg-youco-blue text-white rounded hover:opacity-90 disabled:opacity-50">
-              {updateMut.isPending ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </Modal>
-      )}
+      {/* Edit modal removed — every cell is inline-editable. Click a cell to
+          edit; Enter or click away to save; Escape to cancel. */}
 
       {deleteId !== null && (
         <Modal title="Delete Mortgage" onClose={() => setDeleteId(null)}>
